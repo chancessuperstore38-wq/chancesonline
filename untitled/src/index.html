@@ -3,26 +3,36 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>chances superstore</title>
+  <title>Blue Store — Trinidad Delivery + Live Reviews</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Firebase (compat) — enable Firestore orders -->
+  <!-- Firebase (compat) for Firestore -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
   <style>
-    /* Backgrounds for home + store sections (swap with your images later) */
+    /* Backgrounds — replace with your store photos any time */
     .hero-bg  { background-image: url('https://picsum.photos/1400/600?random=31'); background-size:cover; background-position:center; }
     .store-bg { background-image: url('https://picsum.photos/1400/600?random=32'); background-size:cover; background-position:center; }
 
-    /* Product card & modal visuals */
+    /* Product visuals */
     .product-img-hover { transition: transform .35s ease; }
     .product-img-hover:hover { transform: scale(1.06); }
     .thumb { cursor:pointer; border:2px solid transparent; width:80px; height:56px; object-fit:cover; border-radius: 6px; }
     .thumb.selected { border-color:#0f172a; }
     .modal-backdrop { background: rgba(0,0,0,0.6); }
+
+    /* Hidden admin button hotspot (top-left) for mobile/desktop */
+    .admin-hotspot {
+      position: fixed; top: 10px; left: 10px; width: 16px; height: 16px;
+      background: rgba(0,0,0,0.08); border-radius: 4px; z-index: 60;
+      opacity: .35; transition: opacity .2s;
+    }
+    .admin-hotspot:hover { opacity: .8; }
+
+    /* Sold out flag */
     .soldout::after {
       content: "SOLD OUT";
       position: absolute;
@@ -35,20 +45,23 @@
 </head>
 <body class="bg-slate-50 text-slate-800">
 
+<!-- Hidden Admin Hotspot (tap/click to open admin) -->
+<button id="adminHotspot" title="Admin" class="admin-hotspot" aria-label="Admin"></button>
+
 <script>
 /* =========================================================
-   Blue Store — Full App
-   - Trinidad town/village delivery tiers
-   - Big-only delivery fee when Furniture/Appliances exist
-   - Variant thumbnails + hover zoom
-   - Sold Out toggle (admin)
-   - Firestore orders (config placeholders)
+   Blue Store — Final Build (Mobile-first)
+   - Trinidad delivery tiers + dynamic towns (Belmont omitted)
+   - Big-only fee rule (Furniture/Appliances)
+   - Live Firestore Reviews (Home + Checkout)
+   - 2-per-row mobile grid, up to 4 on desktop
+   - Admin (hidden top-left hotspot + Shift+A + footer link)
    ========================================================= */
 
 document.addEventListener('DOMContentLoaded', () => {
 
   /* ===================== FIREBASE ===================== */
-  // TODO: Replace with your Firebase project keys
+  // TODO: Replace with your Firebase project keys to enable live orders+reviews.
   const firebaseConfig = {
     apiKey: "AIzaSyBB_a2XMkYOJUbo3EMNfwKdmFk62UDNnHY",
     authDomain: "cssonline-68553.firebaseapp.com",
@@ -62,118 +75,96 @@ document.addEventListener('DOMContentLoaded', () => {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
   } catch (e) {
-    console.warn('⚠️ Firebase not initialized — fill firebaseConfig to enable Firestore order saving.');
+    console.warn('⚠️ Firebase not initialized — fill firebaseConfig to enable Firestore order & review saving.');
     db = null;
   }
 
   /* ================== DELIVERY PRICING =================
      Focal point: St. Mary’s, Fifth Company (Moruga)
-     Tiers (closest → furthest) with Big/Small fees:
-       1: $100 / $20
-       2: $150 / $35
-       3: $250 / $50
-       4: $300 / $100
-       5: $350 / $125
-       6: $400 / $150
-       7: $500 / $175
-       8: $600 / $200
-     Only Furniture/Appliances trigger Big fee; otherwise Small.
+     Tiers (closest → furthest) Big/Small fees:
+       1: $100/$20, 2: $150/$35, 3: $250/$50, 4: $300/$100,
+       5: $350/$125, 6: $400/$150, 7: $550/$175, 8: $600/$200
+     Big-only rule: if any Furniture/Appliances in cart → Big fee only.
   ======================================================= */
   const deliveryTiers = [
     { tier: 1, big: 100, small: 20 },
     { tier: 2, big: 150, small: 35 },
-    { tier: 2.2, big: 200, small: 35 },
     { tier: 3, big: 250, small: 50 },
     { tier: 4, big: 300, small: 100 },
     { tier: 5, big: 350, small: 125 },
     { tier: 6, big: 400, small: 150 },
-    { tier: 7, big: 500, small: 175 },
+    { tier: 7, big: 550, small: 175 },
     { tier: 8, big: 600, small: 200 }
   ];
 
-  /* ================== TOWN → TIER MAPPING ==============
-     Trinidad only, alphabetical dropdown generated dynamically.
-     Excluded areas: Morvant, Laventille, Beetham, Sea Lots (omitted).
-     NOTE: You can tweak tiers at any time; UI updates automatically.
-  ======================================================= */
+  /* ================== TOWN → TIER (Trinidad) ==============
+     Alphabetical dropdown generated dynamically.
+     EXCLUDED: Morvant, Laventille, Beetham, Sea Lots, **Belmont**.
+  ========================================================== */
   const townToTier = {
-    // ----- SOUTH (closest to Moruga) : Tier 1–2 -----
-    "Moruga":2.2,"Princes Town":2,"Penal":3,"Debe":3,"New Grant":2,"Gandhi Village":3,"St. Mary’s":1,"Fifth Company":1,"Navet":3,"Indian Walk":1,
-    "Barrackpore":2.2,"Tableland":3,"Rio Claro (Town Centre)":4,"Borde Narve":3,"Petit Café":2,"Hardbargain":3,
+    // Local / Closest (Tier 1–2)
+    "St. Mary’s (Fifth Company)":1,"Fifth Company":1,"St. Mary’s":1,"Moruga":1,"Princes Town":1,"Penal":1,"Debe":1,"Indian Walk":1,"New Grant":1,"Gandhi Village":1,
+    "Barrackpore":2,"Tableland":2,"Rio Claro (Town Centre)":2,"Borde Narve":2,"Petit Café":2,"Hardbargain":2,
 
-    // ----- SOUTH / SAN FERNANDO BELT : Tier 3 -----
-    "San Fernando":3,"Marabella":3,"Pointe-à-Pierre":4,"Gasparillo":4,"Reform":4,"La Romaine":4,"Palmiste":3,"Golconda":3,"Gulf View":3,
-    "Oropouche":4,"Siparia":4,"Fyzabad":4,"Woodland":4,"Debe Junction":4,
+    // San Fernando belt (Tier 3)
+    "San Fernando":3,"Marabella":3,"Pointe-à-Pierre":3,"Gasparillo":3,"Reform":3,"La Romaine":3,"Palmiste":3,"Golconda":3,"Gulf View":3,"Oropouche":3,"Siparia":3,"Fyzabad":3,"Woodland":3,
 
-    // ----- CENTRAL : Tier 3–4 -----
-    "Claxton Bay":5,"California":5,"Waterloo":5,"Couva":5,"Mc Bean":5,"Point Lisas":5,
-    "Chaguanas":5,"Charlieville":5,"Cunupia":5,"Endeavour":5,"Longdenville":5,"Felicity":5,"Carapichaima":6,"Freeport":6,"Caroni":6,
+    // Central (Tier 3–4)
+    "Claxton Bay":3,"California":3,"Waterloo":3,"Couva":3,"Mc Bean":3,"Point Lisas":3,
+    "Chaguanas":4,"Charlieville":4,"Cunupia":4,"Endeavour":4,"Longdenville":4,"Felicity":4,"Carapichaima":4,"Freeport":4,"Caroni":4,
 
-    // ----- SOUTH-WEST & SOUTH COAST : Tier 4–8 -----
+    // South-West & South Coast (Tier 4–8)
     "La Brea":6,"Point Fortin":7,"Cap-de-Ville":7,"Palo Seco":7,"Erin":8,"Cedros":8,"Icacos":8,
     "Guayaguayare":6,"Mayaro":6,"Ortoire":5,"Biche":5,
 
-    // ----- EAST & NORTH-EAST : Tier 4–8 -----
-    "Sangre Grande":6,"Guaico":6,"Valencia":6,"Manzanilla":6,"Matura":7,"Matelot":7,"Toco":8,"Cumuto":7,"Wallerfield":6,
+    // East & North-East (Tier 4–8)
+    "Sangre Grande":4,"Guaico":4,"Valencia":4,"Cumuto":4,"Wallerfield":4,"Manzanilla":5,"Matura":7,"Matelot":7,"Toco":8,
 
-    // ----- EAST-WEST CORRIDOR & ARIMA : Tier 4–5 -----
-    "Arima":6,"Malabar":6,"D'Abadie":6,"Mausica":6,"Arouca":6,"Piarco":6,"Trincity":6,"Tacarigua":6,
-    "Tunapuna":6,"Curepe":6,"St Augustine":6,"Macoya":6,"Valsayn":6,"Mt. Hope":6,"Mt. Lambert":6,
+    // East-West Corridor (Tier 5) & environs
+    "Arima":5,"Malabar":5,"D'Abadie":5,"Mausica":5,"Arouca":5,"Piarco":5,"Trincity":5,"Tacarigua":5,"Tunapuna":5,"Curepe":5,"St Augustine":5,"Macoya":5,"Valsayn":5,"Mt. Hope":5,"Mt. Lambert":5,
 
-    // ----- NORTH / WEST incl. POS districts : Tier 7–8 -----
-    // Exclusions intentionally omitted: Morvant, Laventille, Beetham, Sea Lots
-    "Port of Spain":7,"St. James":7,"Maraval":7,"Cascade":7,"Belmont":7,"Woodbrook":7,"St. Ann's":7,
+    // POS & North/West (Tier 7–8) — **Belmont omitted**
+    "Port of Spain":8,"St. James":7,/* Belmont intentionally removed */ "Maraval":7,"Cascade":7,"Woodbrook":7,"St. Ann's":7,
     "Diego Martin":7,"Petit Valley":7,"Westmoorings":7,"Carénage":7,"Chaguaramas":7,
     "Santa Cruz":7,"Maracas Valley":7,"Barataria":7,"San Juan":7,"El Socorro":7,"Aranguez":7,
 
-    // ----- North Coast / far-ish -----
+    // North Coast far
     "Blanchisseuse":8,"Las Cuevas":8
   };
 
-  // Build alphabetical town dropdown from mapping
+  // Build alphabetical town dropdown
   function populateTownDropdown(selectEl) {
     selectEl.innerHTML = '';
-    const towns = Object.keys(townToTier).sort((a,b) => a.localeCompare(b));
-    // Placeholder option
     const ph = document.createElement('option');
-    ph.value = '';
-    ph.textContent = 'Select your town (Trinidad)';
+    ph.value = ''; ph.textContent = 'Select your town (Trinidad)';
     selectEl.appendChild(ph);
-    // Add towns alphabetically
-    towns.forEach(town => {
+    Object.keys(townToTier).sort((a,b)=>a.localeCompare(b)).forEach(town=>{
       const opt = document.createElement('option');
-      opt.value = town;
-      opt.textContent = town;
+      opt.value = town; opt.textContent = town;
       selectEl.appendChild(opt);
     });
   }
 
-  // Delivery fee calculator with console warnings and Big-only rule
+  // Delivery fee with Big-only rule + console warnings
   function getDeliveryFeeForTownAndCart(townName, cart) {
-    if (!townName) return { tier: null, fee: 0 };
+    if (!townName) return { tier:null, fee:0, hasBig:false };
     const tier = townToTier[townName];
     if (!tier) {
       console.warn(`⚠️ Town '${townName}' not found in mapping. Delivery fee = 0`);
-      return { tier: null, fee: 0 };
+      return { tier:null, fee:0, hasBig:false };
     }
     const prices = deliveryTiers.find(t => t.tier === tier);
     if (!prices) {
       console.warn(`⚠️ No delivery tier pricing found for tier: ${tier}. Delivery fee = 0`);
-      return { tier, fee: 0 };
+      return { tier, fee:0, hasBig:false };
     }
-    // Big-only rule: if cart has any Furniture/Appliances → Big fee; else Small
     const hasBig = cart.some(i => i.category === 'Furniture' || i.category === 'Appliances');
-    return { tier, fee: hasBig ? prices.big : prices.small };
+    return { tier, fee: hasBig ? prices.big : prices.small, hasBig };
   }
 
-  /* ===================== SEED PRODUCTS =====================
-     - Multiple images + variants
-     - isSpecial for Home specials
-     - soldOut supported (disable UI)
-     NOTE: size is NOT stored; we infer Big/Small by category at checkout
-  =========================================================== */
+  /* ===================== PRODUCTS ===================== */
   let storeItems = [
-    {name:"7 Feet TV Stand With Side Storage",price:2500,category:"Furniture",images:  ["https://dl.dropboxusercontent.com/scl/fi/7ptinriapwqkwhif1mffz/20250820_153948.jpg?rlkey=ibjjtpsgqvim0rito9xx37ew3&st=8c56bcho&"]},
+   {name:"7 Feet TV Stand With Side Storage",price:2500,category:"Furniture",images:  ["https://dl.dropboxusercontent.com/scl/fi/7ptinriapwqkwhif1mffz/20250820_153948.jpg?rlkey=ibjjtpsgqvim0rito9xx37ew3&st=8c56bcho&"]},
       {name: "Tall Boy", price: 2700, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/0drmve3qf3daoov6sdjab/20250820_153853.jpg?rlkey=prbif81979ituxkf1rt5tlrrh&st=x95mu5kn&", "https://dl.dropboxusercontent.com/scl/fi/a9dll7c22meddbeujzy40/20250820_153909.jpg?rlkey=se7m272bje7t3zie2ourvag6f&st=vw5uewhl&"]},
     {name: "2 Feet Pantry With Draw SOLD OUT", catogory: "Furniture", price: 1400, images: ["https://via.placeholder.com/150"], variants: {Color: ["Black","Brown", "White"] }, isSpecial: true },
     {name: "2 Feet Pantry Without Draw", price: 1300, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/60izrzm5aiye016j2m2ak/IMG-20250820-WA0016.jpg?rlkey=vvs0unmys0g89hu4nus4egul5&st=ex2exqdd&"], variants: {Color: ["Black","Brown", "White"] }, isSpecial: true },
@@ -345,12 +336,12 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ===================== STATE ===================== */
   let cart = []; // { name, category, price, qty, image, selectedOptions }
   let currentPage = 1;
-  const itemsPerPage = 8; // grid shows 2 per row on small+, so 8/page = 4 rows
+  const itemsPerPage = 8; // 8 per page (as you requested)
   let currentFilter = 'All';
   let currentSearch = '';
   const ADMIN_PASSWORD = 'admin123';
 
-  /* ===================== DOM ===================== */
+  /* ===================== DOM REFS ===================== */
   const homeSection = document.getElementById('homeSection');
   const storeSection = document.getElementById('storeSection');
   const cartSection  = document.getElementById('cartSection');
@@ -363,7 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const specialPreview= document.getElementById('specialPreview');
   const featuredPreview= document.getElementById('featuredPreview');
-  const reviewsEl     = document.getElementById('reviewsEl');
 
   const cartToggleBtn = document.getElementById('cartToggleBtn');
   const cartSidebar   = document.getElementById('cartSidebar');
@@ -389,6 +379,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const deliveryFeeRow    = document.getElementById('deliveryFeeRow');
   const deliveryFeeValue  = document.getElementById('deliveryFeeValue');
   const grandTotalValue   = document.getElementById('grandTotalValue');
+
+  // Reviews (Checkout page)
+  const reviewsListCheckout = document.getElementById('reviewsListCheckout');
+  const reviewFormCheckout  = document.getElementById('reviewFormCheckout');
+  const reviewNameCheckout  = document.getElementById('reviewNameCheckout');
+  const reviewRatingCheckout= document.getElementById('reviewRatingCheckout');
+  const reviewFeedbackCheckout= document.getElementById('reviewFeedbackCheckout');
+
+  // Reviews (Home page)
+  const reviewsListHome   = document.getElementById('reviewsListHome');
+  const reviewFormHome    = document.getElementById('reviewFormHome');
+  const reviewNameHome    = document.getElementById('reviewNameHome');
+  const reviewRatingHome  = document.getElementById('reviewRatingHome');
+  const reviewFeedbackHome= document.getElementById('reviewFeedbackHome');
 
   // admin
   const adminModal = document.getElementById('adminModal');
@@ -430,8 +434,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('backHomeBtn').addEventListener('click', ()=> showPage('home'));
   cartToggleBtn.addEventListener('click', toggleCartSidebar);
   document.getElementById('cartCloseBtn').addEventListener('click', toggleCartSidebar);
+  document.getElementById('adminHotspot').addEventListener('click', openAdminLogin);
 
-  // Support opening admin via URL hash
+  // URL hash shortcut for admin
   if (window.location.hash === '#admin') openAdminLogin();
 
   // Home category quick-filters
@@ -447,7 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ===================== HOME RENDER ===================== */
   function renderHome(){
-    // specials preview (from isSpecial)
+    // specials preview
     specialPreview.innerHTML = '';
     const specials = storeItems.filter(i => i.isSpecial).slice(0,3);
     if (!specials.length) specialPreview.innerHTML = '<div class="text-white/80">No specials right now</div>';
@@ -461,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
       specialPreview.appendChild(d);
     });
 
-    // featured preview (simple sample)
+    // featured preview
     featuredPreview.innerHTML = '';
     storeItems.filter(i => !i.isSpecial).slice(0,3).forEach(p => {
       const d = document.createElement('div');
@@ -471,20 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
                      <div class="text-white/80">$${p.price}</div></div>`;
       d.addEventListener('click', ()=> openProductModal(p));
       featuredPreview.appendChild(d);
-    });
-
-    // reviews (demo content)
-    reviewsEl.innerHTML = '';
-    [{n:'Sarah J.',t:'Amazing service and fast delivery!',s:5},
-     {n:'Mike T.',t:'Great prices — I’ll be back!',s:4},
-     {n:'Aisha R.',t:'Best online store in town!',s:5}]
-    .forEach(r=>{
-      const rv = document.createElement('div');
-      rv.className = 'bg-white/20 p-3 rounded';
-      rv.innerHTML = `<div class="font-semibold text-white">${escapeHtml(r.n)}</div>
-                      <div class="text-yellow-300">${'★'.repeat(r.s)}</div>
-                      <div class="mt-1 text-white/90">${escapeHtml(r.t)}</div>`;
-      reviewsEl.appendChild(rv);
     });
   }
 
@@ -509,14 +500,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     itemsGrid.innerHTML = '';
     pageItems.forEach(item => {
-      // Card outer
       const card = document.createElement('div');
       card.className = 'relative bg-white p-4 rounded-lg shadow group';
-
-      // Gray-out if sold out
       if (item.soldOut) card.classList.add('opacity-60');
 
-      // Badge for sold out
       if (item.soldOut) {
         const badge = document.createElement('div');
         badge.className = 'absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded';
@@ -526,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.innerHTML += `
         <div class="overflow-hidden rounded ${item.soldOut ? 'soldout' : ''}">
-          <img src="${item.images[0]}" class="w-full h-56 object-cover product-img-hover" />
+          <img src="${item.images[0]}" class="w-full h-48 sm:h-56 object-cover product-img-hover" />
         </div>
         <div class="mt-3">
           <div class="font-semibold">${escapeHtml(item.name)}</div>
@@ -542,7 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.querySelector('.openDetails').addEventListener('click', ()=> openProductModal(item));
 
-      // Quick add: pick first options per variant and add
       const qa = card.querySelector('.quickAdd');
       if (qa && !item.soldOut) {
         qa.addEventListener('click', ()=> {
@@ -598,18 +584,17 @@ document.addEventListener('DOMContentLoaded', () => {
       variantSelectors.innerHTML = '<div class="text-sm text-slate-600">No options</div>';
     }
 
-    // Thumbnails: select image + auto-select variant when possible
+    // Thumbnails: image swap + auto-select variant if length matches
     modalThumbs.innerHTML = '';
     product.images.forEach((img, idx) => {
       const t = document.createElement('img');
-      t.src = img;
-      t.className = 'thumb ' + (idx===0 ? 'selected' : '');
+      t.src = img; t.className = 'thumb ' + (idx===0 ? 'selected' : '');
       t.addEventListener('click', () => {
         modalSelectedImageIndex = idx;
         modalMainImg.src = img;
         Array.from(modalThumbs.children).forEach(c => c.classList.remove('selected'));
         t.classList.add('selected');
-        // auto-select axis that maps 1:1 to images (same length)
+        // auto-select variant options when arrays match image count
         Array.from(variantSelectors.querySelectorAll('select')).forEach(sel => {
           const opts = Array.from(sel.options).map(o => o.value);
           if (opts.length === product.images.length && opts[idx]) sel.value = opts[idx];
@@ -672,7 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="font-semibold">${escapeHtml(c.name)}</div>
             <div class="text-xs uppercase text-slate-500">${(c.category==='Furniture'||c.category==='Appliances') ? 'BIG ITEM' : 'small item'}</div>
             <div class="text-sm text-slate-600">${c.selectedOptions ? Object.entries(c.selectedOptions).map(([k,v])=>`${k}: ${v}`).join(' / ') : ''}</div>
-            <div class="mt-1">$${c.price} × ${c.qty}</div>
+                <div class="mt-1">$${c.price} × ${c.qty}</div>
           </div>`;
         cartPageItems.appendChild(cp);
       }
@@ -686,21 +671,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function toggleCartSidebar(){ cartSidebar.classList.toggle('translate-x-full'); }
 
   /* ===================== CHECKOUT ===================== */
-  // Populate towns dynamically (alphabetical)
   populateTownDropdown(townSelect);
   townSelect.addEventListener('change', updateCheckoutTotals);
 
   function updateCheckoutTotals(){
-    // Items total
     const itemsTotal = cart.reduce((s,i) => s + i.price * i.qty, 0);
-    // Delivery fee by town & category mix (big-only rule)
+    totalPriceEl.textContent = '$' + itemsTotal.toFixed(2);
+
     const town = townSelect.value;
     const { tier, fee } = getDeliveryFeeForTownAndCart(town, cart);
-    if (!town) {
-      deliveryFeeRow.classList.add('hidden');
-    } else {
-      deliveryFeeRow.classList.remove('hidden');
-    }
+    if (!town) deliveryFeeRow.classList.add('hidden'); else deliveryFeeRow.classList.remove('hidden');
     deliveryFeeValue.textContent = '$' + Number(fee || 0).toFixed(2);
     grandTotalValue.textContent = '$' + (itemsTotal + (fee || 0)).toFixed(2);
   }
@@ -711,16 +691,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const email = document.getElementById('cust_email').value.trim();
     const address = document.getElementById('cust_address').value.trim();
     const town = townSelect.value;
-    if (!name || !contact || !email || !address || !town) { alert('Please complete all checkout fields, including Town.'); return; }
-    if (!cart.length) { alert('Your cart is empty'); return; }
+    if (!name || !contact || !email || !address || !town) { alert('Please complete all checkout fields including Town.'); return; }
+    if (!cart.length) { alert('Cart empty'); return; }
 
     const itemsTotal = cart.reduce((s,i)=> s + i.price*i.qty, 0);
-    const { tier, fee } = getDeliveryFeeForTownAndCart(town, cart);
+    const { tier, fee, hasBig } = getDeliveryFeeForTownAndCart(town, cart);
     const orderTotal = itemsTotal + (fee || 0);
 
     const order = {
       customer: { name, contact, email, address, town },
-      delivery: { tier: tier || null, fee: fee || 0 },
+      delivery: { tier: tier || null, fee: fee || 0, mode: hasBig ? 'big' : 'small' },
       items: cart.map(i => ({
         name: i.name, category: i.category, price: i.price, qty: i.qty,
         selectedOptions: i.selectedOptions || {}, image: i.image
@@ -735,7 +715,10 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Firestore not configured — order payload:', order);
         alert('Order logged to console (Firestore not configured).');
       } else {
-        await db.collection('orders').add({ ...order, createdAt: firebase.firestore.Timestamp.fromDate(order.createdAt) });
+        await db.collection('orders').add({
+          ...order,
+          createdAt: firebase.firestore.Timestamp.fromDate(order.createdAt)
+        });
         alert('Order saved to Firestore!');
       }
       cart = []; renderCart();
@@ -749,6 +732,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /* ===================== REVIEWS (LIVE) ===================== */
+  function renderReviewCard(r) {
+    const when = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleString() : '';
+    const wrap = document.createElement('div');
+    wrap.className = 'p-3 bg-slate-50 rounded shadow';
+    wrap.innerHTML = `
+      <div class="font-semibold text-[#003366]">${escapeHtml(r.name || 'Anonymous')}</div>
+      <div class="text-yellow-500">${'★'.repeat(r.rating || 0)}${'☆'.repeat(Math.max(0, 5 - (r.rating || 0)))}</div>
+      <p class="text-sm mt-1">${escapeHtml(r.feedback || '')}</p>
+      ${when ? `<div class="text-xs text-slate-500 mt-1">${when}</div>` : '' }
+    `;
+    return wrap;
+  }
+
+  // Render live list into both Home + Checkout (NO placeholders)
+  function attachReviewsRealtime() {
+    if (!db) {
+      console.log('Reviews live view disabled — Firestore not configured.');
+      return;
+    }
+    db.collection('reviews').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+      // Home
+      if (reviewsListHome) {
+        reviewsListHome.innerHTML = '';
+        snapshot.forEach(doc => reviewsListHome.appendChild(renderReviewCard(doc.data())));
+      }
+      // Checkout
+      if (reviewsListCheckout) {
+        reviewsListCheckout.innerHTML = '';
+        snapshot.forEach(doc => reviewsListCheckout.appendChild(renderReviewCard(doc.data())));
+      }
+    });
+  }
+
+  function bindReviewForm(formEl, nameEl, ratingEl, feedbackEl) {
+    if (!formEl) return;
+    formEl.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = (nameEl.value || '').trim();
+      const rating = parseInt(ratingEl.value, 10);
+      const feedback = (feedbackEl.value || '').trim();
+      if (!name || !rating || !feedback) { alert('Please fill in all review fields'); return; }
+      try {
+        if (!db) {
+          console.log('Review (no Firestore):', { name, rating, feedback });
+          alert('Review logged to console (Firestore not configured).');
+        } else {
+          await db.collection('reviews').add({
+            name, rating, feedback,
+            createdAt: firebase.firestore.Timestamp.now()
+          });
+        }
+        formEl.reset();
+        toast('Thanks for your review!');
+      } catch (err) {
+        console.error(err);
+        alert('Failed to submit review — see console.');
+      }
+    });
+  }
+
+  // Bind both review forms
+  bindReviewForm(reviewFormHome, reviewNameHome, reviewRatingHome, reviewFeedbackHome);
+  bindReviewForm(reviewFormCheckout, reviewNameCheckout, reviewRatingCheckout, reviewFeedbackCheckout);
+  attachReviewsRealtime();
+
   /* ===================== ADMIN (hidden) ===================== */
   function openAdminLogin(){
     adminModal.classList.remove('hidden');
@@ -757,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
     adminPassInput.value = '';
     ordersList.innerHTML = '';
   }
-  window.openAdminLogin = openAdminLogin; // expose
+  window.openAdminLogin = openAdminLogin;
 
   adminLoginBtn.addEventListener('click', async () => {
     if (adminPassInput.value !== ADMIN_PASSWORD) { alert('Wrong password'); return; }
@@ -865,14 +914,9 @@ document.addEventListener('DOMContentLoaded', () => {
         wrapper.className = 'p-3 bg-slate-50 rounded mb-2';
         wrapper.innerHTML = `
           <div class="font-semibold">${escapeHtml(ord.customer?.name || 'No name')} — ${when}</div>
-          <div class="text-sm">Town: ${escapeHtml(ord.customer?.town || '')} • Tier: ${ord.delivery?.tier ?? '—'} • Delivery: $${(ord.delivery?.fee ?? 0)}</div>
+          <div class="text-sm">Town: ${escapeHtml(ord.customer?.town || '')} • Tier: ${ord.delivery?.tier ?? '—'} • Delivery: $${(ord.delivery?.fee ?? 0)} (${escapeHtml(ord.delivery?.mode || '')})</div>
           <div class="text-sm mt-1">Items: $${(ord.itemsTotal ?? 0)} • Total: $${(ord.orderTotal ?? 0)}</div>
-          <div class="mt-2 text-sm">
-            ${(ord.items || []).map(it=>
-              `<div>${escapeHtml(it.name)} x${it.qty} <span class="uppercase text-xs">(${(it.category==='Furniture'||it.category==='Appliances') ? 'BIG' : 'small'})</span>
-               ${it.selectedOptions ? '(' + Object.entries(it.selectedOptions).map(([k,v])=>`${k}:${v}`).join(', ') + ')' : ''}</div>`
-            ).join('')}
-          </div>`;
+          <div class="mt-2 text-sm">${(ord.items || []).map(it=>`<div>${escapeHtml(it.name)} x${it.qty} <span class="uppercase text-xs">(${(it.category==='Furniture'||it.category==='Appliances')?'BIG':'small'})</span> ${(it.selectedOptions) ? '(' + Object.entries(it.selectedOptions).map(([k,v])=>`${k}:${v}`).join(', ') + ')' : ''}</div>`).join('')}</div>`;
         ordersList.appendChild(wrapper);
       });
     } catch (err) {
@@ -905,6 +949,13 @@ document.addEventListener('DOMContentLoaded', () => {
   window.submitOrder = submitOrder;
   window.toggleCartSidebar = toggleCartSidebar;
 
+  // ✅ Keyboard shortcut: Shift + A to open Admin
+  document.addEventListener('keydown', (e) => {
+    if (e.shiftKey && e.key.toLowerCase() === 'a') {
+      openAdminLogin();
+    }
+  });
+
 }); // DOMContentLoaded
 </script>
 
@@ -912,11 +963,10 @@ document.addEventListener('DOMContentLoaded', () => {
 <header class="bg-[#003366] text-white sticky top-0 z-50">
   <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-4">
-      <h1 class="text-xl font-bold cursor-pointer" onclick="showPage('home')">Chances Superstore</h1>
+      <h1 class="text-xl font-bold cursor-pointer" onclick="showPage('home')">Chances Online</h1>
       <div class="hidden md:flex gap-2">
         <button id="navHomeBtn" class="px-3 py-1 rounded bg-[#0055aa] hover:bg-[#1677ff]">Home</button>
         <button id="navStoreBtn" class="px-3 py-1 rounded bg-[#0055aa] hover:bg-[#1677ff]">Store</button>
-        <!-- Hidden Admin UI: open with #admin or call window.openAdminLogin() -->
       </div>
     </div>
     <div class="flex items-center gap-3">
@@ -936,8 +986,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="bg-black/40 p-8 rounded-lg text-white">
       <div class="flex flex-col md:flex-row md:justify-between gap-6">
         <div>
-          <h2 class="text-3xl md:text-5xl font-extrabold">Welcome to CSSL Online</h2>
-          <p class="mt-3 max-w-xl">Quality products across furniture, appliances & more — specials curated just for you.</p>
+          <h2 class="text-3xl md:text-5xl font-extrabold">Welcome to Chances Superstore Online</h2>
+          <p class="mt-3 max-w-xl">Quality products across furniture, appliances & household items — specials curated just for you.</p>
           <div class="mt-6 flex flex-wrap gap-3">
             <button data-homecat="Furniture" class="px-4 py-2 rounded bg-white text-[#003366]">Furniture</button>
             <button data-homecat="Appliances" class="px-4 py-2 rounded bg-white text-[#003366]">Appliances</button>
@@ -960,10 +1010,24 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
 
-      <div class="mt-8 bg-white/10 p-4 rounded">
-        <h4 class="font-semibold">Customer Reviews</h4>
-        <div id="reviewsEl" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm"></div>
-      </div>
+      <!-- Live Reviews (Home) -->
+      <section class="mt-6 bg-white/90 p-4 rounded text-black">
+        <h3 class="text-lg font-bold text-[#003366]">Share Your Experience</h3>
+        <form id="reviewFormHome" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input id="reviewNameHome" placeholder="Your name" class="p-2 border rounded w-full" required />
+          <select id="reviewRatingHome" class="p-2 border rounded w-full" required>
+            <option value="">Rating (1–5)</option>
+            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+            <option value="4">⭐⭐⭐⭐ (4)</option>
+            <option value="3">⭐⭐⭐ (3)</option>
+            <option value="2">⭐⭐ (2)</option>
+            <option value="1">⭐ (1)</option>
+          </select>
+          <textarea id="reviewFeedbackHome" placeholder="Your feedback..." class="p-2 border rounded md:col-span-2" required></textarea>
+          <button type="submit" class="bg-[#003366] text-white px-4 py-2 rounded md:col-span-2">Submit Review</button>
+        </form>
+        <div id="reviewsListHome" class="mt-4 space-y-3 max-h-72 overflow-auto"></div>
+      </section>
     </div>
   </section>
 
@@ -972,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="bg-white/90 p-6 rounded">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div class="flex items-center gap-3">
-          <input id="searchInput" class="px-3 py-2 border rounded" placeholder="Search products..." />
+          <input id="searchInput" class="px-3 py-2 border rounded w-56" placeholder="Search products..." />
           <select id="categorySelect" class="px-3 py-2 border rounded">
             <option value="All">All Categories</option>
             <option>Toys</option>
@@ -988,14 +1052,14 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
 
-      <!-- 2-per-row grid on sm+, 1-per-row on xs -->
-      <div id="itemsGrid" class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-6"></div>
+      <!-- Grid: 2 per row on mobile, then 3/4 on larger screens -->
+      <div id="itemsGrid" class="mt-6 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
       <div id="paginationBar" class="mt-6 flex justify-center gap-2"></div>
     </div>
   </section>
 
   <!-- CART SIDEBAR -->
-  <aside id="cartSidebar" class="fixed top-0 right-0 w-96 h-full bg-white shadow-lg transform translate-x-full transition-transform z-50">
+  <aside id="cartSidebar" class="fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-lg transform translate-x-full transition-transform z-50">
     <div class="p-4 flex flex-col h-full">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-[#003366]">Your Cart</h3>
@@ -1053,6 +1117,28 @@ document.addEventListener('DOMContentLoaded', () => {
         <button id="submitOrderBtn" onclick="submitOrder()" class="bg-[#003366] text-white px-4 py-2 rounded">Submit Order</button>
         <button onclick="showPage('home')" class="bg-yellow-400 text-[#003366] px-4 py-2 rounded">Back to Home</button>
       </div>
+
+      <!-- Live Reviews (Checkout) -->
+      <section class="mt-10 bg-white rounded p-4">
+        <h3 class="text-lg font-bold text-[#003366]">How was your experience?</h3>
+        <p class="text-sm text-slate-600">Report any bugs or tell us what you loved — your feedback helps us improve.</p>
+
+        <form id="reviewFormCheckout" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input id="reviewNameCheckout" placeholder="Your name" class="p-2 border rounded w-full" required />
+          <select id="reviewRatingCheckout" class="p-2 border rounded w-full" required>
+            <option value="">Rating (1–5)</option>
+            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+            <option value="4">⭐⭐⭐⭐ (4)</option>
+            <option value="3">⭐⭐⭐ (3)</option>
+            <option value="2">⭐⭐ (2)</option>
+            <option value="1">⭐ (1)</option>
+          </select>
+          <textarea id="reviewFeedbackCheckout" placeholder="Your feedback..." class="p-2 border rounded md:col-span-2" required></textarea>
+          <button type="submit" class="bg-[#003366] text-white px-4 py-2 rounded md:col-span-2">Submit Review</button>
+        </form>
+
+        <div id="reviewsListCheckout" class="mt-4 space-y-3 max-h-72 overflow-auto"></div>
+      </section>
     </div>
   </section>
 
@@ -1078,7 +1164,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
-  <!-- ADMIN modal (hidden unless opened via #admin or window.openAdminLogin()) -->
+  <!-- ADMIN modal -->
   <div id="adminModal" class="fixed inset-0 hidden items-center justify-center z-70 modal-backdrop">
     <div class="bg-white p-6 rounded max-w-4xl w-full">
       <h3 class="text-xl font-bold mb-2">Admin — Products & Orders</h3>
@@ -1111,24 +1197,15 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
-  <!-- INFO (contact) -->
-  <button id="infoBtn" onclick="document.getElementById('infoModal').classList.toggle('hidden')" class="fixed right-6 bottom-6 bg-[#003366] text-white rounded-full w-12 h-12 z-60">i</button>
-  <div id="infoModal" class="fixed inset-0 hidden items-center justify-center z-60 modal-backdrop">
-    <div class="bg-white p-6 rounded max-w-sm w-full text-center">
-      <h4 class="font-bold text-lg">Contact & Social</h4>
-      <p class="mt-3">📞 +1 868 349 3440</p>
-      <p>✉️ superstorechances@gmail.com</p>
-      <p>📍 Fifth Company Village, Moruga</p>
-      <div class="mt-3 flex justify-center gap-3">
-        <a href="#" class="text-blue-700">Facebook</a>
-        <a href="#" class="text-pink-600">Instagram</a>
-        <a href="#" class="text-sky-500">Twitter</a>
-        <a href="#" class="text-black">TikTok</a>
-      </div>
-      <button onclick="document.getElementById('infoModal').classList.add('hidden')" class="mt-4 px-4 py-2 bg-red-500 text-white rounded">Close</button>
-    </div>
-  </div>
-
 </main>
+
+<!-- Footer with subtle Admin link -->
+<footer class="text-center text-sm text-gray-500 py-6">
+  <p>© 2025 Chances Superstore Online</p>
+  <button onclick="openAdminLogin()" class="mt-2 text-xs underline text-[#003366] hover:text-blue-600">
+    Admin
+  </button>
+</footer>
+
 </body>
 </html>
