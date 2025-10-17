@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    
+
+  </head>
+    
+  <body>
+  <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Chances Online — Hybrid + Firestore Merge</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Firebase (compat for CodePen simplicity) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+  /* Splash: diagonal gradient + pulse */
+  .splash {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: linear-gradient(135deg,#002047 0%, #0b4ea2 55%, #e8f3ff 100%);
+    color: #fff; z-index: 1000;
+  }
+  .pulse-icon { width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.15);animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1);opacity:.9;} 50%{transform:scale(1.08);opacity:1;} }
+  .fade-out { animation: fadeout .35s ease forwards; }
+  @keyframes fadeout { to { opacity:0; visibility:hidden; } }
+
+  .hero-bg  { background-image:url('https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=1400&auto=format&fit=crop'); background-size:cover; background-position:center; }
+  .store-bg { background-image:url('https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=1400&auto=format&fit=crop'); background-size:cover; background-position:center; }
+
+  .admin-hotspot{ position:fixed; top:10px; left:10px; width:18px; height:18px; border-radius:4px; background:rgba(0,0,0,.08); z-index:80; opacity:.35; transition:opacity .2s; }
+  .admin-hotspot:hover{ opacity:.9; }
+
+  .modal-backdrop{ background:rgba(0,0,0,.6); }
+  .thumb{ width:78px;height:58px;object-fit:cover;border-radius:6px;border:2px solid transparent;cursor:pointer; }
+  .thumb.selected{ border-color:#0f172a; }
+  .product-img-hover { transition: transform .3s ease; }
+  .product-img-hover:hover { transform: scale(1.05); }
+
+  #adminModal { overflow-y:auto; }
+  #paginationBar button { min-width:36px; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<!-- Splash -->
+<div id="splash" class="splash">
+  <div class="flex flex-col items-center gap-5 px-6 text-center">
+    <div class="pulse-icon"><div class="text-2xl">🛍️</div></div>
+    <div>
+      <div class="text-2xl md:text-3xl font-extrabold">Chances Online</div>
+      <div class="text-sm md:text-base" style="color:rgba(0,0,0,.85);">Loading your store…</div>
+    </div>
+    <button id="forceHideSplashBtn" class="px-4 py-2 rounded bg-white/90 text-[#003366] hover:bg-white">⚙️ Reload Store</button>
+  </div>
+</div>
+
+<!-- Hidden admin hotspot -->
+<button id="adminHotspot" title="Admin" class="admin-hotspot" aria-label="Admin"></button>
+
+<header class="bg-[#003366] text-white sticky top-0 z-50">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="text-xl font-bold cursor-pointer" onclick="showPage('home')">Chances Online</div>
+      <nav class="hidden md:flex gap-2">
+        <button id="navHomeBtn"  class="px-3 py-1 rounded bg-[#0055aa] hover:bg-[#1677ff]">Home</button>
+        <button id="navStoreBtn" class="px-3 py-1 rounded bg-[#0055aa] hover:bg-[#1677ff]">Store</button>
+      </nav>
+    </div>
+    <button id="cartToggleBtn" class="flex items-center gap-2 px-3 py-1 rounded bg-[#0055aa] hover:bg-[#1677ff]">
+      🛒 Cart <span id="cartCount" class="ml-1 inline-block bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+    </button>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-8">
+  <!-- HOME -->
+  <section id="homeSection" class="hero-bg rounded-lg overflow-hidden p-8 mb-8">
+    <div class="bg-black/45 p-6 md:p-8 rounded-lg text-white">
+      <div class="flex flex-col md:flex-row md:justify-between gap-6">
+        <div>
+          <h1 class="text-3xl md:text-5xl font-extrabold">Welcome to Chances Online</h1>
+          <p class="mt-3 max-w-xl">Furniture, appliances, electronics & more — tiered delivery across Trinidad.</p>
+          <div class="mt-6 flex flex-wrap gap-3">
+            <button data-homecat="Furniture"   class="px-4 py-2 rounded bg-white text-[#003366]">Furniture</button>
+            <button data-homecat="Appliances"  class="px-4 py-2 rounded bg-white text-[#003366]">Appliances</button>
+            <button data-homecat="Electronics" class="px-4 py-2 rounded bg-white text-[#003366]">Electronics</button>
+            <button data-homecat="All"         class="px-4 py-2 rounded bg-white text-[#003366]">All</button>
+          </div>
+        </div>
+
+        <div class="w-full md:w-1/3">
+          <div class="bg-white/95 rounded p-4 text-black">
+            <h3 class="font-bold text-lg">🔥 Special Offers</h3>
+            <div id="specialPreview" class="mt-3 grid grid-cols-1 gap-3"></div>
+            <button onclick="document.getElementById('categorySelect').value='All'; currentFilter='All'; currentPage=1; showPage('store');" class="mt-3 w-full bg-yellow-400 text-[#003366] py-2 rounded">See all deals</button>
+          </div>
+          <div class="bg-white/95 rounded p-4 text-black mt-4">
+            <h3 class="font-bold text-lg">⭐ Featured</h3>
+            <div id="featuredPreview" class="mt-3 grid grid-cols-1 gap-3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reviews (Home) -->
+      <section class="mt-6 bg-white/95 p-4 rounded text-black">
+        <h3 class="text-lg font-bold text-[#003366]">Tell us how we’re doing</h3>
+        <form id="reviewFormHome" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input id="reviewNameHome" placeholder="Your name" class="p-2 border rounded w-full" required />
+          <select id="reviewRatingHome" class="p-2 border rounded w-full" required>
+            <option value="">Rating (1–5)</option>
+            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+            <option value="4">⭐⭐⭐⭐ (4)</option>
+            <option value="3">⭐⭐⭐ (3)</option>
+            <option value="2">⭐⭐ (2)</option>
+            <option value="1">⭐ (1)</option>
+          </select>
+          <textarea id="reviewFeedbackHome" placeholder="Your feedback…" class="p-2 border rounded md:col-span-2" required></textarea>
+          <button type="submit" class="bg-[#003366] text-white px-4 py-2 rounded md:col-span-2">Submit Review</button>
+        </form>
+        <div id="reviewsListHome" class="mt-4 space-y-3 max-h-72 overflow-auto"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- STORE -->
+  <section id="storeSection" class="store-bg rounded-lg overflow-hidden p-6 mb-8 hidden">
+    <div class="bg-white/95 p-6 rounded">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+          <input id="searchInput" class="px-3 py-2 border rounded w-full sm:w-56" placeholder="Search products…" />
+          <select id="categorySelect" class="px-3 py-2 border rounded w-full sm:w-48">
+            <option value="All">All Categories</option>
+            <option>Furniture</option>
+            <option>Appliances</option>
+            <option>Mini Appliances</option>
+            <option>Kitchen</option>
+            <option>Electronics</option>
+            <option>Toys</option>
+            <option>Footwear</option>
+            <option>Home</option>
+          </select>
+        </div>
+        <div class="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
+          <span id="resultsCount" class="text-sm text-slate-600">0 items</span>
+          <button id="backHomeBtn" class="px-3 py-1 bg-yellow-400 text-[#003366] rounded">Back to Home</button>
+        </div>
+      </div>
+
+      <!-- Force 2 per row on >=sm; 8 per page -->
+      <div id="itemsGrid" class="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-6"></div>
+      <div id="paginationBar" class="mt-6 flex flex-wrap justify-center gap-2"></div>
+    </div>
+  </section>
+
+  <!-- CART SIDEBAR -->
+  <aside id="cartSidebar" class="fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-lg transform translate-x-full transition-transform z-50">
+    <div class="p-4 flex flex-col h-full">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-[#003366]">Your Cart</h3>
+        <button id="cartCloseBtn" class="text-slate-600">Close ✕</button>
+      </div>
+      <div id="cartList" class="mt-3 flex-1 overflow-auto space-y-3"></div>
+      <div class="mt-4">
+        <div class="flex items-center justify-between font-bold text-lg">
+          <span>Total</span><span id="cartTotal">$0.00</span>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-2">
+          <button onclick="toggleCartSidebar(); showPage('cart')" class="col-span-2 bg-[#003366] text-white py-2 rounded">View Cart</button>
+          <button onclick="toggleCartSidebar(); showPage('cart')" class="col-span-2 bg-green-600 text-white py-2 rounded">Checkout</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CHECKOUT -->
+  <section id="cartSection" class="hidden p-6 rounded-lg bg-white/90 mb-8">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-2xl font-bold mb-4">Checkout</h2>
+      <div id="cartPageItems" class="space-y-4"></div>
+
+      <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <input id="cust_name" placeholder="Full name" class="p-2 border rounded" />
+        <input id="cust_contact" placeholder="Phone" class="p-2 border rounded" />
+        <input id="cust_email" placeholder="Email" class="p-2 border rounded" />
+        <input id="cust_address" placeholder="Address" class="p-2 border rounded" />
+        <select id="townSelect" class="p-2 border rounded md:col-span-2"></select>
+      </div>
+
+      <div class="mt-6 bg-slate-50 rounded p-4">
+        <div class="flex items-center justify-between"><span>Items Total</span><span id="totalPrice">$0.00</span></div>
+        <div id="deliveryFeeRow" class="flex items-center justify-between mt-2 hidden"><span>Delivery Fee</span><span id="deliveryFeeValue">$0.00</span></div>
+        <hr class="my-2">
+        <div class="flex items-center justify-between font-bold text-lg"><span>Grand Total</span><span id="grandTotalValue">$0.00</span></div>
+      </div>
+
+      <div class="mt-4 flex items-center gap-3">
+        <button id="submitOrderBtn" class="bg-[#003366] text-white px-4 py-2 rounded">Submit Order</button>
+        <button onclick="showPage('home')" class="bg-yellow-400 text-[#003366] px-4 py-2 rounded">Back to Home</button>
+      </div>
+
+      <!-- Reviews at Checkout -->
+      <section class="mt-10 bg-white rounded p-4">
+        <h3 class="text-lg font-bold text-[#003366]">How was your experience?</h3>
+        <p class="text-sm text-slate-600">Leave a quick rating or report any issues.</p>
+        <form id="reviewFormCheckout" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input id="reviewNameCheckout" placeholder="Your name" class="p-2 border rounded w-full" required />
+          <select id="reviewRatingCheckout" class="p-2 border rounded w-full" required>
+            <option value="">Rating (1–5)</option>
+            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+            <option value="4">⭐⭐⭐⭐ (4)</option>
+            <option value="3">⭐⭐⭐ (3)</option>
+            <option value="2">⭐⭐ (2)</option>
+            <option value="1">⭐ (1)</option>
+          </select>
+          <textarea id="reviewFeedbackCheckout" placeholder="Your feedback…" class="p-2 border rounded md:col-span-2" required></textarea>
+          <button type="submit" class="bg-[#003366] text-white px-4 py-2 rounded md:col-span-2">Submit Review</button>
+        </form>
+        <div id="reviewsListCheckout" class="mt-4 space-y-3 max-h-72 overflow-auto"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- PRODUCT MODAL -->
+  <div id="productModal" class="fixed inset-0 hidden items-center justify-center z-50 modal-backdrop">
+    <div class="bg-white rounded-lg max-w-4xl w-full mx-4 md:mx-0 p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+        <img id="modalMainImg" src="" alt="" class="w-full h-96 object-contain rounded product-img-hover" />
+        <div id="modalThumbs" class="mt-3 flex gap-2 overflow-auto"></div>
+      </div>
+      <div>
+        <h3 id="modalName" class="text-2xl font-bold"></h3>
+        <p id="modalCategory" class="text-sm text-slate-600"></p>
+        <p id="modalDescription" class="mt-3 text-sm text-slate-700 whitespace-pre-line"></p>
+        <p class="mt-3"><span id="modalPrice" class="font-bold text-xl text-[#003366]"></span></p>
+        <div id="variantSelectors" class="mt-4 space-y-3"></div>
+        <div class="mt-6 flex flex-col sm:flex-row gap-3">
+          <button id="addToCartBtn" class="bg-[#003366] text-white px-4 py-2 rounded">Add to Cart</button>
+          <button id="closeProductModal" class="bg-gray-200 px-4 py-2 rounded">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="adminModal" class="fixed inset-0 hidden items-center justify-center z-60 modal-backdrop">
+    <div class="bg-white p-6 rounded max-w-4xl w-full">
+      <h3 class="text-xl font-bold mb-2">Admin — Products & Orders</h3>
+
+      <div class="flex gap-3 mb-3">
+        <input id="adminPass" type="password" placeholder="Enter admin password" class="p-2 border rounded flex-1" />
+        <button id="adminLoginBtn" class="bg-[#003366] text-white px-3 py-2 rounded">Login</button>
+        <button id="adminCloseBtn" class="bg-gray-200 px-3 py-2 rounded">Close</button>
+      </div>
+
+      <div id="adminProductsScroll" class="mb-4 max-h-96 overflow-auto rounded border p-2">
+        <div id="adminProductsList"></div>
+      </div>
+
+      <div id="adminProductFormWrapper" class="hidden bg-slate-50 p-4 rounded">
+        <h4 class="font-bold mb-2">Add / Edit Product</h4>
+        <div class="grid grid-cols-1 gap-2">
+          <input id="pm_name" placeholder="Name" class="p-2 border rounded" />
+          <input id="pm_category" placeholder="Category (Furniture/Appliances/etc.)" class="p-2 border rounded" />
+          <textarea id="pm_description" placeholder="Description (use new lines for bullets)" class="p-2 border rounded h-28 overflow-auto"></textarea>
+          <input id="pm_price" placeholder="Price" type="number" class="p-2 border rounded" />
+          <input id="pm_originalPrice" placeholder="Original Price (optional)" type="number" class="p-2 border rounded" />
+          <input id="pm_images" placeholder="Images (comma-separated URLs)" class="p-2 border rounded" />
+          <input id="pm_variants" placeholder="Variants e.g. Color:Red,Blue;Size:S,M" class="p-2 border rounded" />
+          <label class="flex items-center gap-2"><input id="pm_special" type="checkbox" /> Special Offer</label>
+          <div class="flex gap-2">
+            <button id="pm_save" class="bg-[#003366] text-white px-3 py-1 rounded">Save</button>
+            <button id="pm_cancel" class="bg-gray-200 px-3 py-1 rounded">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="ordersList" class="mt-4 max-h-96 overflow-auto rounded border p-2"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="text-center text-sm text-gray-500 py-6">
+  <p>© 2025 Chances Online</p>
+  <button onclick="openAdminLogin()" class="mt-2 text-xs underline text-[#003366] hover:text-blue-600">Admin</button>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  /* ===================== FIREBASE CONFIG (INSERT YOURS) ===================== */
+  const firebaseConfig = {
+    // 🔑 Replace with your Firebase config to enable Firestore:
+    apiKey: "AIzaSyBvuoLWQku8BNZ8-PxEYWzOrpWIk_C5WsQ",
+    authDomain: "conline-15c03.firebaseapp.com",
+    projectId: "conline-15c03",
+    storageBucket: "conline-15c03.firebasestorage.app",
+    messagingSenderId: "1315076687",
+    appId: "1:1315076687:web:29143c2052ab522b33c83a"
+  };
+
+  let db = null;
+  try {
+    if (firebaseConfig.apiKey) {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      console.log('✅ Firebase initialized for orders/reviews/admin saves.');
+    } else {
+      console.warn('⚠️ Firebase config missing — orders/reviews/admin will NOT persist.');
+    }
+  } catch (e) { console.error('⚠️ Firebase init error:', e); }
+
+  /* ========================= DELIVERY TIERS (TRINIDAD) ====================== */
+  const deliveryTiers = [
+    { tier:1,big:100,small:20 }, { tier:2,big:150,small:35 }, { tier:3,big:250,small:50 }, { tier:4,big:300,small:100 },
+    { tier:5,big:350,small:125 }, { tier:6,big:400,small:150 }, { tier:7,big:550,small:175 }, { tier:8,big:600,small:200 }
+  ];
+ const townToTier = {
+    "St. Mary’s (Fifth Company)":1,"Fifth Company":1,"St. Mary’s":1,"Moruga":2,"Princes Town":2,"Penal":3,"Debe":3,"Indian Walk":1,"New Grant":2,
+    "Barrackpore":2,"Tableland":3,"Rio Claro (Town Centre)":4,"Borde Narve":3,
+    "San Fernando":3,"Marabella":4,"Gasparillo":4,"Siparia":4,"Fyzabad":4,
+    "Chaguanas":5,"Charlieville":5,"Cunupia":5,"Freeport":5,"Caroni":5,
+    "Point Fortin":6,"La Brea":5,"Cedros":8,"Icacos":8,
+    "Guayaguayare":6,"Mayaro":6,"Ortoire":5,"Biche":5,
+    "Sangre Grande":4,"Valencia":6,"Manzanilla":6,"Matura":7,"Toco":8,
+    "Arima":6,"Arouca":6,"Trincity":6,"Tacarigua":6,"Tunapuna":6,"Curepe":6,"St Augustine":6,
+    "Port of Spain":7,"St. James":7,"Maraval":7,"Cascade":7,"Woodbrook":7,"St. Ann's":7,
+    "Diego Martin":7,"Petit Valley":7,"Westmoorings":7,"Carénage":7,"Chaguaramas":7,
+    "Santa Cruz":7,"Barataria":7,"San Juan":7,"El Socorro":7,"Aranguez":7,
+    "Blanchisseuse":8,"Las Cuevas":8
+  };
+
+
+  /* ============================== LOCAL PRODUCTS (SOURCE OF TRUTH) ============================== */
+  const seedItems = [
+    {name:"7 Feet TV Stand With Side Storage",price:2500,category:"Furniture",images:  ["https://dl.dropboxusercontent.com/scl/fi/7ptinriapwqkwhif1mffz/20250820_153948.jpg?rlkey=ibjjtpsgqvim0rito9xx37ew3&st=8c56bcho&"]},
+      {name: "Tall Boy", price: 2700, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/0drmve3qf3daoov6sdjab/20250820_153853.jpg?rlkey=prbif81979ituxkf1rt5tlrrh&st=x95mu5kn&", "https://dl.dropboxusercontent.com/scl/fi/a9dll7c22meddbeujzy40/20250820_153909.jpg?rlkey=se7m272bje7t3zie2ourvag6f&st=vw5uewhl&"]},
+    {name: "2 Feet Pantry With Draw", catogory: "Furniture", price: 1400, images: ["https://via.placeholder.com/150"], variants: {Color: ["Black","Brown", "White"] }, isSpecial: true },
+    {name: "2 Feet Pantry Without Draw", price: 1300, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/60izrzm5aiye016j2m2ak/IMG-20250820-WA0016.jpg?rlkey=vvs0unmys0g89hu4nus4egul5&st=ex2exqdd&"], variants: {Color: ["Black","Brown", "White"]}}, 
+    {name: "3 Feet Pantry With Draw", price: 1800, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/mvlpfcixka3ip7af2ue0l/20250820_154116.jpg?rlkey=v8jkb2un11n3knpj896v2vub6&st=qbpnu55j&", "https://dl.dropboxusercontent.com/scl/fi/l7fub8w9orau23bokrh0p/20250820_153837.jpg?rlkey=2rl6dvu18nbw8cwa0ag2fo06r&st=f3ff4joq&"],
+     variants: {Color: ["Brown","Black"] }, isSpecial: true},
+    {name: "3 Feet Pantry Without Draw", price: 1800, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/2qtpi2oj7xjsqpj7znuts/20250820_154143.jpg?rlkey=8n13s34klyr7nep6aymxh4nik&st=r54pv3l6&"]},
+     {name: "2 Door Wardrobe(5ft9'x2ft7')", price: 1800, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/i13xfkh2i7a2j8v01n1b2/20250820_153746.jpg?rlkey=af4xuvu70ufsndtv3sqcy9kmp&st=l0r5rrzk&"]},
+    {name: "3 Door Wardrobe", price: 3700, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/1a31a7srwcy3wtarkebl1/20250820_154203.jpg?rlkey=2csdsiuqcapa03cpj276ejv13&st=f1klah9c&", "https://dl.dropboxusercontent.com/scl/fi/2g87m9vv70c3m9xplq5lk/20250820_154209.jpg?rlkey=t0og3nu7bcgvmkj1zl5rxv14u&st=073yo2zg&"]},
+     {name: "Vanity With Stool(5ft10'x5ft)", price: 3500, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/woibd0s0inh99wgumvep6/20250820_154045.jpg?rlkey=i2f7bef9unj7y1mn3vs1ead0o&st=khbx75y9&"],
+    variants: {Color: ["Brown",] }, isSpecial: true},
+     {name: "Vanity With Wings(6ftx5ft2')", price: 3500, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/f5asqrutl7i3r0dirfztm/20250822_141106.jpg?rlkey=5k44yuw5ivtleysnwy5p4mz5e&st=15xhlyxw&"]},
+    {name: "Five Feet Kitchen Cupboard", price: 3300, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/f5asqrutl7i3r0dirfztm/20250822_141106.jpg?rlkey=5k44yuw5ivtleysnwy5p4mz5e&st=v89juj7g&"]},
+     {name: "Four Feet Kitchen Cupboard", price: 2700, category: "Furniture", images: ["https://via.placeholder.com/150"]},
+    {name: "Glass Corner Hutch(6ftx2ft6')", price: 6000, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/s6bhw7bmqfkxckcdu4c2b/20250820_153815.jpg?rlkey=k5ih4oc0y4y4bfnl7pszxxvo8&st=h1628s9m&"]},
+     {name: "3 Door Veena Wardrobe A", price: 7200, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/w9skolt57pl704j1fsylw/20250821_100021.jpg?rlkey=xe7xksbc1i6y5kmseze96xj27&st=69aii36w&"]},
+    {name: "3door Veena Wardrobe B(7ft4'x5ft10')", price: 7200, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/sac6026iqf2j4cm9cjcnb/20250821_100122.jpg?rlkey=a8z76tcbe4tsrxhrfsc4wewdc&st=a6ajl66u&"]},
+    {name: "2 Door Wall Cabinet With Glass Doors(2ftx3ft)", price: 1300, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/jcben09gizg0dhvlqlt1h/20250822_140846.jpg?rlkey=xazpu8saadz347dwj4fczwp7z&st=mjegav5u&"]},
+     {name: "3 Door Wall Cabinet(2ftx4ft)", price: 1895, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/zwialf1zcf6bsmlzvj57o/20250822_140916.jpg?rlkey=ntz0jszgrhc2et0c3x1ld20on&st=jzt7zig0&"]},
+    {name: "3 Door Wall Cabinet With Glass Doors(2ftx4ft)", price: 1895, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/dpd7b2blmzce94gcx1rpu/20250822_140947.jpg?rlkey=halqhghdyfjuza2gy2bqbj6ut&st=2mqivigu&"]},
+    {name: "Bedside Table With 3 Draws(2ftx1ft8')", price: 550, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/u2esv2e8cnsy9ca6ipvxr/IMG-20250820-WA0023.jpg?rlkey=bzkuxvsepcxossds6fgvamym2&st=eq61pspk&","https://dl.dropboxusercontent.com/scl/fi/jt76j3c8t13288kvzqxde/IMG-20250820-WA0024.jpg?rlkey=ezcigshseo5afuilyii3xkx1y&st=50oc08sp&", "https://dl.dropboxusercontent.com/scl/fi/tvmzvm3cg22m76nfrceo3/IMG-20250820-WA0021.jpg?rlkey=bwo4hggk68f7pkw0w4up01f5a&st=gqqlkdl3&"],
+    variants: {Color: ["White","Brown","Black"] }, isSpecial: true},
+    {name: "Bedside Table With Draw And Door(2ftx1ft8)", price: 550, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/cnns33jju5l6bvxgaswi3/IMG-20250820-WA0019.jpg?rlkey=53nqqa9chi6n1a46lkp4jxixg&st=d6elcdfs&","https://dl.dropboxusercontent.com/scl/fi/79jvb4wohu3xbbpwhb1pv/IMG-20250820-WA0026.jpg?rlkey=i0e2opcn6umrmphu174qviqki&st=783tcy7g&",
+"https://dl.dropboxusercontent.com/scl/fi/o2obrxd049cqol2g5shnx/IMG-20250820-WA0022.jpg?rlkey=y5reuhuz92wxj1h5fv6fdquue&st=coa4hy7j&"],
+    variants: {Color: ["White","Brown","Black"] }, isSpecial: true},
+    {name: "Medicine Cabinet(1ft5'x1ft6')", price: 350, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/gv8xl5r3bc9vzpparfvw8/IMG-20250820-WA0014.jpg?rlkey=i8fs1zkve0jhlax6sgvlww8bi&st=5a9mucr1&","https://dl.dropboxusercontent.com/scl/fi/ppk5leza5cxs1w9jfyvgm/IMG-20250820-WA0018.jpg?rlkey=9imvpayvpn1mo7jutccg0tke0&st=nz47mpbx&"],
+     variants: {Color: ["Brown","Black"] }, isSpecial: true},
+    {name: "6 Piece Dining Table", price: 3800, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/abtwa7png30cnwd645ho5/20250821_101541.jpg?rlkey=tpki0cc2mso9nkb799njdfaby&st=f0mq7y6b&"]},
+     {name: "4 Piece Dining Table", price: 3200, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/38je6laon8i46mut1eagb/20250821_101553.jpg?rlkey=u48r12y0us2etlry3i7fca93j&st=hk7f4y0s&",                                   "https://dl.dropboxusercontent.com/scl/fi/ctnbryhnqu704l4bpibb4/20250821_101621.jpg?rlkey=b6qy6qz5pqjlvxordph5plg9w&st=07bqlboq&"],
+      variants: {Color: ["Brown","Black"] }}, 
+    {name: "Reclining Sofa", price: 1495, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/7hp9wyucy06pkaxvcxyya/IMG_1819.jpg?rlkey=3bgzfictnymtnshv6zl19pssp&st=n06bhxja&dl=0","https://dl.dropboxusercontent.com/scl/fi/ijh04mrsh7hs6p4pxfczz/IMG_1820.jpg?rlkey=f0jgth5h1zz3y00bed32oenkt&st=pvesx7uz&dl=0","https://dl.dropboxusercontent.com/scl/fi/rpd6zq2istksz080qm9dx/IMG_1821.jpg?rlkey=zk6xy0fw8cnmfl22yb9gnerjk&st=lfr5frkc&dl=0"],
+    variants: {Color: ["Cream","Brown","Black"] }}, 
+     {name: "4pc Wicker patio set", price: 1900, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/lfxj9tknaxlufbptqnxs2/IMG_1814.jpg?rlkey=di6yzjbyenp8i0s87xdrm5tqk&st=eg773uhg&dl=0","https://dl.dropboxusercontent.com/scl/fi/kjhb5zbztdvqt47ks5ist/IMG_1816.JPG?rlkey=gvw0al1c7juzlusosv7q7zv5f&st=mayfvazy&dl=0","https://dl.dropboxusercontent.com/scl/fi/per3t70gkal9sdgf25sot/IMG_1817.JPG?rlkey=nfv9ljagtqn6mgeax7fte83eq&st=2reikezv&dl=0"]},
+     {name: "6Pc Patio set with Umbrella (Black)", price: 895, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/zql0nqytg6691hbtfv7wh/IMG_1818.jpg?rlkey=9hp8q2wmtz0bj6pgnyr8pnazo&st=08pfle6r&dl=0"]},
+     {name: "4ft Standing Party Table", price: 895, category: "Furniture", images: ["https://dl.dropboxusercontent.com/scl/fi/tcqdby3e6andcjqbin51w/IMG_1810.jpg?rlkey=563mh88elu9wkky2vodi2hkij&st=c01xz0w5&dl=0","https://dl.dropboxusercontent.com/scl/fi/ldq76kkxqoi7jeob62iep/IMG_1812.jpg?rlkey=m6twtlee7ctl6wh0hs20ita1p&st=lwpmrc0x&dl=0"],
+      variants: {Color: ["Black","White"] }},
+    
+    
+    
+     
+    
+ 
+    {name: "Genie 18CubicFt Stainless Steel Refridgerator", price: 6600, description:"Dimensions(27.5',x27'x67)",category: "Appliances", images:["https://dl.dropboxusercontent.com/scl/fi/7isggyp22al390brqbc94/Genie-18-cuft.jpg?rlkey=mkg5riuu83sicac3lmwps7bkz&st=tdtkdacu&d&"]},
+    {name: "Kenmore 18CubicFt Standing Freezer", price: 9900, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/q1djduv81lqi6d42st372/kenmore-upfr.jpg?rlkey=fwlgugt5rg3s3cx5cos0u3n73&st=6ghn3a5s&"]},
+    {name: "G.E. 14CubicFt Standing Freezer", price: 7495, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/zvyv1k51z3117xnbzw6l5/download.jpg?rlkey=mbsbph9elzzvlceaff92m6jye&st=ipja34ui&"]},
+     {name: "Whirlppol 24.7 Cubic Feet SxS Refridgerator With Dispenser", price: 11995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/1jm5b09fjnz55ht4rlhfg/550.webp?rlkey=p2midmfvekhuux3mk0vs7kwa8&st=9x82p5an&"]},
+     {name: "LG 24CubicFt Refridgerator With French Door And Dispenser", price: 16595, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/2f10plnvlogaovo83txok/thum-1600x1062.avif?rlkey=vy58bfck2ac06m3xk30u9grcd&st=jwxfh9ca&"]},
+    {name: "Oster 9CubicFt Refridgerator With Dispenser (Black)", price: 3095, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/wrewc1btotqw29qd6ki5i/10615204.png?rlkey=mr9ifxa5512xagxbaof2kif19&st=x3ilz7n9&"]},
+    {name: "Oster 8CubicFt Beverage Chiller (Black)", price: 3895, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/4589guaiiy4m6of4m6np3/oster-8-chiller.webp?rlkey=9b53xbsuz7vvu88rkdz4aa7ye&st=hbs6sb5q&"]},
+        {name: "Oster 12CubicFt Beverage Chiller (Black)", price: 4595, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/wn5cbu7obqvc0s8mkhys8/oster-12-chiller.webp?rlkey=r0frkh7evebitlq60r08jnedb&st=28t55wm9&"]},
+    {name: "Premium Levella 13CubicFt Stainless Steel Refridgerator", price: 5300, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/eonnnu1435sro59jsek4d/Precision-Trading-Corp_ffiZ0sExxe183b2.avif?rlkey=75agwq9fj4vj310wrpckjlu5x&st=r5dp7t6x&"]},
+    {name: "Whirlpool 18CubicFt Tropicalized Refridgerator", price: 6795, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/io3x9xll63q4jightnzqu/WT1818A.avif?rlkey=id83ndae4tryr92qwqihtnvei&st=s62oi7fw&"]},
+     {name: "Whirlpool 16CubicFt Refridgerator With Dispenser", price: 5295, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/nqz56zbhx968qtbrjfse2/WRJ45AKTWW-2-300x300.webp?rlkey=3humkavdvc93vsjysoxrumlj6&st=rj4x3zoj&"]},
+    {name: "Whirlpool 14CubicFt Refridgerator With Dispenser", price: 5195, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/t38j0wfrd2wm82a4xahcs/WRJ43AKTWW.jpg?rlkey=p93yh5510ey3rm9njrislrlb0&st=2mwxs4w5&"]},
+    {name: "Whirlpool 11CubicFt Refridgerator With Dispenser", price: 4500, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/oopc5s2di08vg2zujwwan/WRW32BKTWWWHIRLPOOLFRIDGE.webp?rlkey=gf6u26walg04l5l4frkrcznmz&st=tegs8iie&"]},
+    {name: "Whirlpool 9CubicFt Refridgerator With Dispenser", price: 3995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/f5ad2xuum2xzgutgdtb1a/WRW25BKTWW9CUFT.webp?rlkey=uazrzdrj6wq6xnq98f8jqjmm4&st=532nmtzp&"]},
+     {name: "Acros 6 Burner Stove/Oven", price: 3995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/eohmnsp9rxftfkiqc3l4s/Acros-6-burner-black.jpg?rlkey=yzh9hph2mgnpfcj8k6v4klx1v&st=0xrzgtt7&dl=0","https://dl.dropboxusercontent.com/scl/fi/sflxs48mqxgrx5hjhujir/acros-6-burner-silver.jpg?rlkey=ts7hi3cdthp9eynb11rvqu43i&st=pqa3d6m5&dl=0"], variants:{Color: ["Black","Silver"]}},
+     {name: "Acros 10.1Kg Twin Tub", price: 3995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/h0ubd0y55tap1p7crjqa8/acrosALD1035JE-ACROS-10.1KG-TWIN-TUB.webp?rlkey=bah7elonotd863dg7a7ncut42&st=7dxcwf2a&dl=0"]},
+     {name: "Acros 10.1Kg Twin Tub", price: 3995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/h0ubd0y55tap1p7crjqa8/acrosALD1035JE-ACROS-10.1KG-TWIN-TUB.webp?rlkey=bah7elonotd863dg7a7ncut42&st=7dxcwf2a&dl=0"]},
+     {name: "Acros 13Kg Twin Tub", price: 3995, category: "Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/qe2n08sd08j6o5b2i8wpk/bsl-ald1335je-a-acros-13-twin-tub.jpg?rlkey=6nzlcy0drqhgnju5ez2px9eha&st=pp6e3bvw&dl=0"]},
+    
+    
+    
+    
+    
+   
+    {name: "Children's Rubber Boots", price: 65, category: "Footwear", images:
+["https://dl.dropboxusercontent.com/scl/fi/vwdob9tg4qle5m0qalf58/20250818_105051.jpg?rlkey=5ezcwjit7dtopmrc6e4jtsij4&st=wzr0ya7w&"]},
+    {name: "Children's Crossover Slippers", price: 25, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/lnn90og226e7hpubxyusk/20250818_104354.jpg?rlkey=ffr14cjs9v11a3jtb7vl1p3bz&st=rlhvwxfv&d"]},
+    {name: "Children's Thin Strap Slippers (girls)", price: 25, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/6uja0bbu1s18qkvampszp/20250818_103934.jpg?rlkey=u2jirir9cdguflw6bbhr382bv&st=lubbezf2&"]},
+     {name: "Adult's Unisex Slippers", price: 45, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/hxmv2689wsu1wn1hrcr8v/20250818_103732.jpg?rlkey=qsiwlv3fk7ch8j80m6a01si6m&st=cgsp8zxn&"]},
+    {name: "Women's Crocs", price: 50, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/d45vd8dn2c6kbg3iujsa7/20250818_104046.jpg?rlkey=sypxn49oumu7veb1tdfbndqn6&st=30a3wwiu&"]},
+    {name: "Children's Water Shoes", price: 45, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/fhjfn7qprnavd5jvqa279/20250818_103815.jpg?rlkey=dpvguzp1v75nhrfjln0y75i2j&st=7vlxbifj&"]},
+    {name: "Adults's Water Shoes", price: 45, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/2ihal3j1flp9uekl2wlne/20250818_103823.jpg?rlkey=u3af4d2kuyr6zubwbfwycih69&st=8y1vm56n&"]},
+    {name: "ANDOLINI Sneakers(Full Black)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/lm7t9p0xtmxmwqul1pq88/IMG_1672.jpg?rlkey=ywsb84mdll17joplv0udaheef&st=w6di3mtd&dl=0"], variants: {Size: ["40","41","43","44","45"] }},
+    {name: "ANDOLINI Sneakers(Black)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/8gu2nd6r9wnoa10e66yet/IMG_1673.jpg?rlkey=ofk6he6389spq3axt2yqa4qtw&st=rcsxnmh9&dl=0"], variants: {Size: ["40","41","42","43","44","45"] }},
+     {name: "ANDOLINI Sneakers(Camel)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/q6jloqnlauzflqm2nhh0x/IMG_1674.jpg?rlkey=0gtbxbvx0mim0vwzxxm19zb1k&st=kkpnesu5&dl=0"], variants: {Size: ["40","41","42","43","44"] }},
+    {name: "ANDOLINI Sneakers(Navy)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/tun5b6cczddmkcwpt0ifs/IMG_1675.jpg?rlkey=1x6wwkylg156qja0n22161m6w&st=o6zmrjw1&dl=0"], variants: {Size: ["40","41","42","43","44"] }},
+    {name: "Britts Childrens Shoes(White)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/5zmb90mftds3lmgwdbobr/IMG_1676.jpg?rlkey=bls19fan6kwg0oe24rn4a8hj3&st=yc1jv9zf&dl=0"], variants: {Size: ["24","25","26","27","28","29"] }},
+    {name: "Britts Childrens Shoes(Black)", price: 85, category: "Footwear", images: ["https://dl.dropboxusercontent.com/scl/fi/upva4el48cqm2r2dr9mo5/IMG_1677.jpg?rlkey=l3gkdb08vq4v1dom1dzkjl0gf&st=drbzbhhf&dl=0"], variants: {Size: ["24","25","26","27","28","30"] }},
+    
+    
+    
+    
+    {name: "Scarlett Classics Blackout Curtain (Zaira Single Panel)", price: 80, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/4gm7f4mhmzn3ljeemfcmc/IMG_1865.jpg?rlkey=mee9tz7sfvrcjhk5z5bro7q3e&st=ek3z0hbs&dl=0", "https://dl.dropboxusercontent.com/scl/fi/pjrdzgnbyaa1lb7584cgz/IMG_1746.jpg?rlkey=iywo751bi7r254hdu22n1dzc7&st=8h24jel5&dl=0","https://dl.dropboxusercontent.com/scl/fi/1txs7xg28xczv3vt5445i/IMG_1748.jpg?rlkey=n81dj5mk2cuvd23n0zuk3f4us&st=gzluzvag&dl=0","https://dl.dropboxusercontent.com/scl/fi/9orqm8zz9nwghb1fkk32e/IMG_1749.jpg?rlkey=sj6b8t5q75t5fmsnfz7igui01&st=in6l9vsn&dl=0"],
+    variants: {Colour:["Orange","Magenta","Sky Blue","Bleached"] }},
+    {name: "Scarlett Classics Blackout Curtains (Lily Single Panel)", price: 80, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/ylpkz7ummxh7qsrp5df5p/20250818_103417.jpg?rlkey=rqwrhoxjhe01rjj5y36w3gfkm&st=r69461bj&","https://dl.dropboxusercontent.com/scl/fi/7d1nq2u8sm01fd5201neo/IMG_1752.jpg?rlkey=4z7jm1cp0telx1ihzmdr6df5w&st=wr6by4x4&dl=0"],
+     variants: {Colour:["Blue","Pink"]}},
+    {name: "Scarlett Classics Blackout Curtains (Greta Single Panel)", price: 90, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/x7na5i63o2eve4patvfc7/IMG_1864.jpg?rlkey=bedm99sqsd8osnykpixsnc5t7&st=psekzjkp&dl=0","https://dl.dropboxusercontent.com/scl/fi/c6k2bl4ds2qom6kmghwnj/IMG_1759.jpg?rlkey=t8c16g35icrw73fmn1s37dlfx&st=fj8qmqyx&dl=0","https://dl.dropboxusercontent.com/scl/fi/kqxibauxtp87gejaw03y0/IMG_1760.jpg?rlkey=7i5xsfd0285q20qzvalca4oue&st=rz2uqkeo&dl=0","https://dl.dropboxusercontent.com/scl/fi/jm2qekyqiv0anm8wtn5f3/IMG_1761.jpg?rlkey=o1mu7lvy16lqg6n1fq4ukmxym&st=gwrm7682&dl=0","https://dl.dropboxusercontent.com/scl/fi/368d0jcys0qtegu1mutc6/IMG_1762.jpg?rlkey=uxlfe3pc1c1aer3xi40qoywxv&st=3pdcltbt&dl=0","https://dl.dropboxusercontent.com/scl/fi/xrcsofrw4q2i13dd22fwi/IMG_1765.jpg?rlkey=cjzyr6sz3kx8z1uazxj9q7um8&st=jcxkwhfu&dl=0","https://dl.dropboxusercontent.com/scl/fi/gq5ytsvx3x6cowugrvtve/IMG_1766.jpg?rlkey=8wug4qqf5ic1379hhf47rsrf7&st=ihl45shy&dl=0","https://dl.dropboxusercontent.com/scl/fi/cz0g1pmv0jie4pfqhcqsm/IMG_1767.jpg?rlkey=5ytlhhzt3651jrg1bvjbc3w7l&st=ygx2bunt&dl=0"],
+     variants: {Colour:["Black","Rose","Aqua","Blue","Green","Silver","Yellow","Camel"]}},
+    {name: "Scarlett CLassics Blackout Curtains (Abigail Single Panel)", price: 90, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/jqj3s2x1kn17cou2uzesu/20250818_103042.jpg?rlkey=fwmrt696r9d48j5iy4utqt9ah&st=89qaiihe&"]},
+     {name: "Scarlett Classics Blackout Curtains (Yani Single Panel)", price: 80, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/3si8oe70mc57kow6pwt30/20250818_102936.jpg?rlkey=39a4127vap8dv5fqdkmehjez2&st=wviru3ak&"]},
+    {name: "Scarlett Classics Blackout Curtains (Flor Single Panel)", price: 80, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/dmy9dz9fta892tawjw1jb/IMG_1860.jpg?rlkey=nwqg9fn11j8kr5m46l2zl4r8o&st=g1cnunvs&dl=0","https://dl.dropboxusercontent.com/scl/fi/nozqn5eljzq21ghuuw2is/IMG_1741.jpg?rlkey=enwcsganh9e43o5i1qgais8sf&st=a90e5862&dl=0","https://dl.dropboxusercontent.com/scl/fi/5ulggoqpgks4s4u9hxat7/IMG_1742.jpg?rlkey=7grnnhjj7qyqswcwlim7v55wu&st=ipvd39wl&dl=0"],
+    variants: {Colour: ["Red","Pink","Violet"]}},
+    {name: "Scarlet Classics Jacquard Window Curtain (Regan Single Panel)", price: 90, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/vcx6slzoevu8vwlsy4flt/IMG_1861.jpg?rlkey=bjpv5hvpcwc5wcjehp9mjblex&st=unlwmsva&dl=0","https://dl.dropboxusercontent.com/scl/fi/bk87qmtwzjqiyxkn15fff/IMG_1754.jpg?rlkey=qgg5cdgaizaghhsp5n7b74iph&st=cun4imem&dl=0","https://dl.dropboxusercontent.com/scl/fi/pihr1su6j7tgfe7bvd3hd/IMG_1755.jpg?rlkey=6htae94bof5nl6z8og2aiwu4q&st=38hr7zv7&dl=0","https://dl.dropboxusercontent.com/scl/fi/wrjiaugftfo3bosc6bo6c/IMG_1756.jpg?rlkey=5mv8cbjpl7aif64zyupphufym&st=tr0joy8m&dl=0","https://dl.dropboxusercontent.com/scl/fi/yc9aarwz3wmsxxgxowq7k/IMG_1757.jpg?rlkey=417uqidsujcuj57rxi8mi53i3&st=i12pwmm2&dl=0","https://dl.dropboxusercontent.com/scl/fi/kbwlvnsj8ddgv1ghp2gai/IMG_1758.jpg?rlkey=ptesszy8shxu79zwxp8u12y13&st=aeepr95a&dl=0"],
+     variants: {Colour: ["Burgundy","Smoke blue","Taupe","White","Beige","Dk grey"]}},
+    {name: "Scarlett Classics Single Panel Curtain with Glitter (Joanne)", price: 60, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/ivu37r7lhloiyis51rfdo/IMG_1774.jpg?rlkey=87i1y4idywp3c071440a0ee03&st=gfqg3k40&dl=0","https://dl.dropboxusercontent.com/scl/fi/8ws8xjlh6eydxlvqwle41/IMG_1776.jpg?rlkey=wj89kt48urfgc34c48h8vs3ee&st=b8z09zrb&dl=0","https://dl.dropboxusercontent.com/scl/fi/3vmk4reu6td94enmgcy9b/IMG_1777.jpg?rlkey=pe0ox1hfh7drxtmln4g4muz73&st=kfmeq5z0&dl=0","https://dl.dropboxusercontent.com/scl/fi/vkfw4mqmy73qc6i3lwifp/IMG_1778.jpg?rlkey=8nhpgpxl2pvp84tt8yq0miwbd&st=211izkgh&dl=0"],
+  variants: {Colour:["Taupe","Blue","Green","Fuschia"]}},
+     {name: "Scarlett Classics Curtain with Grommets (Carole)", price: 50, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/1q28io98ouqtlu1wwtgkz/IMG_1779.jpg?rlkey=57s8obyvu2s6qwu7be9ocrw0i&st=4nvjna6x&dl=0","https://dl.dropboxusercontent.com/scl/fi/eqvg584aat3nmffum0po7/IMG_1780.jpg?rlkey=82kt7xuzzvdyq6vmicwbyn4v2&st=lx5zdlcm&dl=0","https://dl.dropboxusercontent.com/scl/fi/pezr2m86nsi8w1teziqmw/IMG_1781.jpg?rlkey=un2pwfyzdey88pkqu1upcxlhc&st=66wn8pl8&dl=0","https://dl.dropboxusercontent.com/scl/fi/y046z203o04swtph6u16n/IMG_1782.jpg?rlkey=i35zbehqyjr8eilvs4b4cz3lq&st=1lbr1kdb&dl=0","https://dl.dropboxusercontent.com/scl/fi/6bce6el2jwmjtqvgx65rb/IMG_1783.jpg?rlkey=4lytwhgacxl9hzjylvgcbf45x&st=cdf0jdf6&dl=0"],
+      variants: {Colour:["Beige","Blue","Yellow","Orange","Pink"]}},
+    {name: "Scarlett Classics 3 Piece Kitchen Curtain (Printed Microfibre)", price: 85, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/wos6fecadx2zrk12k15t5/20250818_101851.jpg?rlkey=k254omne87ldxaj350ol4rx7l&st=y0lyzz99&"]},
+    {name: "Scarlett Classics 3 Piece Kitchen Curtain (Printed Microfibre)", price: 85, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/wos6fecadx2zrk12k15t5/20250818_101851.jpg?rlkey=k254omne87ldxaj350ol4rx7l&st=y0lyzz99&"]},
+    {name: "Outdoor Welcome Mat", price: 85, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/5ymh4eo3agum163gtzmzy/20250818_101109.jpg?rlkey=vut040a7ltoyrlrvfurjjzgjf&st=6bdfag80&"]},
+    {name: "Fixed TV Wall Mount 37-70 Inches", price: 25, category: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/zzj5i6ieq97lj4l045ts1/IMG-20250819-WA0014.jpeg?rlkey=579dhqjv3jkck1q3kivpgrkb0&st=obtp9cpj&"]},
+    {name: "Coat Hanger", price: 95, desc: "Home", images: ["https://dl.dropboxusercontent.com/scl/fi/4t7dsmi9qvn67vevzunw1/IMG-20250818-WA0009.jpg?rlkey=jbqk9weou2ul41lb634xxq5j3&st=j24vxvn2&"]},
+    
+    
+    
+    
+    {name: "Two Burner Table Top Stove", price: 125, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/a8ttv5sdvijf8tiiz951o/IMG-20250818-WA0022.jpg?rlkey=k4284pknqmyat60kz20n50bt7&st=kj9c18b6&"]},
+     {name: "Three Burner Tabletop Stove", price: 175, category: "Kitchen", images:["https://dl.dropboxusercontent.com/scl/fi/auc0ikqb43pvz9ei1k0oq/IMG-20250818-WA0020.jpg?rlkey=6ybpv5v3fioigm17t42nixle4&st=l268f6zv&"]},
+    {name: "Single Burner Countertop Stove on stand", price: 395, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/jlu3sttgnfwf8ykc8am80/IMG-20250818-WA0021.jpg?rlkey=dh1o2lj0fh2z2om1m2un0c5xa&st=96z0rga1&"]},
+    {name: "Lotus Stainless Steel Kettle (Diamond Line)", price: 135, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/ac1e0c21jdf1tz700pq24/PHOTO-2025-08-25-12-51-41-2.jpg?rlkey=7ds2na8z154eaugao8dffx989&st=cbxhp1m9&dl=0"]},
+   {name: "Lotus Stainless Steel Kettle (Chanpagne Line)", price: 140, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/6invm7dab7tfi55tcmb8c/PHOTO-2025-08-25-12-51-41-3.jpg?rlkey=a3x4w7ukagbtnuksdc51x70t4&st=36ttvxyz&dl=0"]},
+   {name: "Lotus Stainless Steel Kettle (Matte Finish)", price: 135, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/7mqwml34m3njwz3psbnze/PHOTO-2025-08-25-12-51-41-4.jpg?rlkey=evw03ioilv8lpobud7bu0ki0s&st=9dgt27fr&dl=0"]},
+     {name: "Lotus Stainless Steel Kettle (Marble Color)", price: 100, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/7dwi3clh4xae07s084jgj/PHOTO-2025-08-25-12-51-41-5.jpg?rlkey=9johs3oktkyueyt09dkucbjwj&st=52x3c01z&dl=0"]},
+    {name: "Lotus Stainless Steel Kettle (Estillo Granite)", price: 140, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/kc1wxdeh0ebl5a7ws57nb/PHOTO-2025-08-25-12-51-41.jpg?rlkey=xkp4fjp4zlitrcihdtp15j33l&st=v6dosp10&dl=0"]},
+    {name: "Lotus 13L Pressure Cooker", price: 385, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/5v8skcmcpe2yumhuruqtk/PHOTO-2025-08-25-12-51-41-6.jpg?rlkey=4rhszp23vumwy3f2b5unkes2f&st=m3g37c8k&dl=0"]},
+     {name: "Lotus 11L Pressure Cooker", price: 290, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/6pt40bs1r55gjtv0d3nj4/PHOTO-2025-08-25-12-51-41-7.jpg?rlkey=k005yub79xd8fnxvz3hjuaqam&st=yi6q83hy&dl=0"]},
+     {name: "Lotus 7L Pressure Cooker", price: 195, category: "Kitchen", description: "7 litre capacity stainless steel pressure cooker with plastic handles comes with one rubber seal", images: ["https://dl.dropboxusercontent.com/scl/fi/6pt40bs1r55gjtv0d3nj4/PHOTO-2025-08-25-12-51-41-7.jpg?rlkey=k005yub79xd8fnxvz3hjuaqam&st=yi6q83hy&dl=0"]},
+     {name: "Lotus 4L Pressure Cooker", price: 185, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/nin1bq1m24blr6okr5w2l/PHOTO-2025-08-25-12-51-41-8.jpg?rlkey=bq4tsuok6ae5pxcu73m4x1hvh&st=mksioakv&"]},
+    {name: "Lotus 3L Pressure Cooker", price: 150, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/ej8g71zwqcemn047281x4/PHOTO-2025-08-25-12-51-41-9.jpg?rlkey=q75d3og805oekb3w9msuil3ce&st=4malisy4&dl=0"]},
+     {name: "BerlingerHaus 6pc Pan Set", price: 475, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/nx40o4ggocz3v0eqk5urw/berlinger-haus-6pc-pan-set-red.jpg?rlkey=39kw8e02mwhq8lehm6dutf3cl&st=9m2l6zyo&","https://dl.dropboxusercontent.com/scl/fi/1a829jx6501sdnfotkfyx/IMG_1721.jpg?rlkey=t4xspzm0cgqe4wskmly5bes09&st=uemw7bcv&dl=0"], variants:{Color: ["Red","Rose Gold"]}},
+    {name: "BerlingerHaus CASSEROLE with LID Induction Pot(28cmx12.4cmx6.1L)", price: 275, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/njckcsrofsdg0zkum8gsj/IMG_1723.jpg?rlkey=2udztulakx4su71xd7wbgaqrg&st=j9oeer0v&dl=0"]}, 
+     {name: "10.5' Galvanize Plates", price: 35, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/0zz22uh9hgxncn0yk0s94/IMG_1707.jpg?rlkey=b6d11ss4m3637ucmnf9txssru&st=ddugf6s4&dl=0"]},
+     {name: "Win Rectangular Baking Pan", price: 14, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/f44s2x33kd0j9v2j99h9g/IMG_1709.jpg?rlkey=cfr2w5bju2p554wdi1gwhbv3r&st=5ssu6qhx&dl=0"]},
+    {name: "Win ANGEL FOOD CAKE PAN(10'x4')", price: 48, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/u5mfdm1cjtx46uxb17mjm/IMG_1711.jpg?rlkey=l63s8p8lo90u32xjgpth8re7h&st=4so51mhl&dl=0"]},
+   {name: "Win ROUNDFORM PAN(8.7'x4')", price: 45, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/kawbcnnuqm91h6o1k2ogd/IMG_1712.jpg?rlkey=82j582qe1sn7l9qp9lbrizjbr&st=08pnb8oo&dl=0"]},
+      {name: "Win ROUND CELEBRATION CAKE PAN(11.8'x2')", price: 35, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/t8bhqseek4tox03igapy0/IMG_1718.jpg?rlkey=enwwl24ms9mxbgx1v5xwqboaf&st=vc164amr&dl=0"]},
+     {name: "WANGFA HeartShaped PAN(10'x1')", price: 18, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/tr8ufnrtp6jpjehazxvda/IMG_1713.jpg?rlkey=9avwi2fwcgwhc3jk3wsau1hd8&st=ne43t7zk&dl=0"]},
+     {name: "YUEER Bundt Pan(11'x2.5')", price: 28, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/h248jhvcx78947tl9h562/IMG_1710.jpg?rlkey=q9gka5fuwjmg1uafxrh686nry&st=dy7l7qoe&dl=0"]},
+     {name: "Bundt Pan(8.5'x1')", price: 20, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/ra4ywupqm989yriz6zdj1/IMG_1714.jpg?rlkey=qnfuwfeiusqhokg3e4puuic87&st=ssz5p38b&dl=0"]},
+     {name: "Small Rectangular Baking Pan (10'x4.5'x3')", price: 12, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/kgjhy8akphhygf0qfyc58/IMG_1715.jpg?rlkey=72rf81wwi2jewd5li9n9tkaea&st=08xincys&dl=0"]},
+    {name: "Round Rectangular Baking Pan (11.5'x5'x2.5')", price: 15, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/fun0bzi84jmqfr3fsn3h4/IMG_1716.jpg?rlkey=pqet65hpvd7gh530apyeke11q&st=o67iyatn&dl=0"]},
+    {name: "Large Rectangular Baking Pan (12'x4'x3')", price: 15, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/srpg3a4i4g350wr3h720p/IMG_1719.jpg?rlkey=dmnxqxbnd7w8wu5rmomrkgkyu&st=9oc86b9e&dl=0"]},
+    {name: "Square Baking Pan (9'x2')", price: 15, category: "Kitchen", images: ["https://dl.dropboxusercontent.com/scl/fi/ctozorpul75bue8iossql/IMG_1717.jpg?rlkey=vto8buw6y47h65etxwo3twh0v&st=mjxvp9wj&dl=0"]},
+    
+    
+    
+   
+    {name: "SHARK Nerf and Gel Blaster", price: 340, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/bsin60ynmrxklhn468iwl/IMG_1825-2.jpg?rlkey=22szcr6ej2131vottte81pusv&st=9zn18c4n&dl=0"]},
+    {name: "Eight Wheels RC Gel Blaster Tank", price: 335, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/sgo4c3spfs2f57kfhoqae/IMG_1826-2.jpg?rlkey=ginyeuy5x6fnwhjaccrv08pjw&st=ogwrv3qb&dl=0","https://dl.dropboxusercontent.com/scl/fi/d8fq38kmx71toonla3xaj/IMG_1827-2.jpg?rlkey=p1xe4hgxzcubcvsg6mpm25z8b&st=umq91e93&dl=0"],
+     variants: {Colour:["Blue","Red"]}},
+    {name: "Six Wheels RC Gel Blaster Tank", price: 325, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/xzkmd6azj809l30xtovkk/IMG_1850-2.jpg?rlkey=sa3nbf05njxlaj3ozlpjbno2y&st=dem5kirv&dl=0"]},
+    {name: "VICTORY RC Transforming Car", price: 495, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/2clbch3c7z9fibdxdjlb0/IMG_1828-2.jpg?rlkey=3zcxlhp1g2b6ocjz90vo4clhg&st=qnxi1z3j&dl=0","https://dl.dropboxusercontent.com/scl/fi/culhphia7y6hzo5vyiv7u/IMG_1829-2.jpg?rlkey=i9mltmlvk9f6ss51v31k0gwnb&st=t5f8st2q&dl=0"],
+     variants: {Colour:["Red","Blue"]}},
+    {name: "MORPH ROBOT RC Transforming Car", price: 375, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/z6qcu89nyx07hzzre8kx0/IMG_1830-2.jpg?rlkey=ql55c00h777akcojm18e644de&st=s51fzn8f&dl=0","https://dl.dropboxusercontent.com/scl/fi/we33310f8b3kkp80mi3yr/IMG_1831-2.jpg?rlkey=a5csqlxf19gk2lcjy3mdxmlv0&st=0vjhgc5k&dl=0"],
+      variants: {Colour:["Blue","Red"]}},
+      {name: "CAR-ROBOT RC Transforming Car", price: 430, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/4gddmgxeucez1hvtq0wkh/IMG_1832-2.jpg?rlkey=7xdk2kbffr02b95fp4hgvvn0g&st=nt606a9o&dl=0"]},
+     {name: "M5 Stuart Light Tank Replica (RC)", price: 1295, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/3njb6d2xx34ozwwl5a7u1/IMG_1833-2.jpg?rlkey=kxtstk8ix5aktbypfk2f6bmsa&st=qu6j1ogi&dl=0"]},
+     {name: "Military Car Replica (RC)", price: 495, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/ffsccsqis047xk8a2lm8b/IMG_1834-2.jpg?rlkey=a4wqdbiyk2i2ndqmtyltueqoa&st=9weqe8am&dl=0"]},
+    {name: "Racing Spray Drift RC Tank", price: 275, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/x5uu8e21x0j0545ye3aho/IMG_1835-2.jpg?rlkey=89mlaggjj9nnsroakxry68l9f&st=qpx26hdr&dl=0","https://dl.dropboxusercontent.com/scl/fi/fv8a58picfbkc8r02urlj/IMG_1836-2.jpg?rlkey=r4minaj6iqrqtmh8frnwhwsy5&st=k189cnxb&dl=0"],
+      variants: {Colour:["Yellow","Blue"]}},
+    {name: "Stunt Eight Wheel Robot Dog(RC)", price: 225, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/xrz6fezj60cyxgu1w9i31/IMG_1837-2.jpg?rlkey=pdomtgwkj5pjbj6dck67ukaqm&st=8xcyfi6f&dl=0","https://dl.dropboxusercontent.com/scl/fi/7o62b5ldxlesa6jh0f1mu/IMG_1838-2.jpg?rlkey=vp7op7jwirnvce7kby60d5jeg&st=w9twrwjh&dl=0","https://dl.dropboxusercontent.com/scl/fi/mlrotrhju9top7f4sy7f9/IMG_1839-2.jpg?rlkey=tl3x846oaq89tx568zy1g0nnu&st=mr9feadn&dl=0"],
+     variants: {Colour:["Purple/Blue","Silver","Black"]}},
+     {name: "STUNT 8 WHEEL ROBOT DOG(RC)", price: 195, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/137v4vjg3abpbbdui3teb/IMG_1851-2.jpg?rlkey=pffqv58pqiai8rd0mqtqq3q0d&st=8vy0durn&dl=0"]},
+     {name: "Dionosaur Train with Tracks (Battery Operated)", price: 90, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/6s48x929ge4smuvgfmeeb/IMG_1840-2.jpg?rlkey=gc3e56v6hcenm3jk83hog7cbo&st=zuhobe0w&dl=0"]},
+    {name: "Retro Classic Train with Switchable Tracks (Battery Operated)", price: 225, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/ux91e8eoopdhtve40p1oo/IMG_1841-2.jpg?rlkey=ebu8aj8gvhrzdr2barw2bxwma&st=srmllk1a&dl=0"]},
+    {name: "Merry Christmas Train with Tracks (Battery Operated)", price: 225, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/2x4hrq3114decm145yo8s/IMG_1842-2.jpg?rlkey=sbvnk8qhwnacel3c0s7f0qkib&st=5633ddvr&dl=0"]},
+    {name: "Quadcopter Drone", price: 200, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/7qhbg1y81vh4mzqhi8jbj/IMG_1844-2.jpg?rlkey=r7y8lvzkmzfkxif11hw3cxlvn&st=27ourgu2&dl=0","https://dl.dropboxusercontent.com/scl/fi/8opjzbfl5pl2w9ra625fe/IMG_1843-2.jpg?rlkey=6tzlz4uqdsdk6c6m8x50szzqr&st=2rq2ftzn&dl=0"],
+     variants: {Colour:["Blue","Red"]}},
+     {name: "Land,Sea and Air Drone(Camera with Downloadable App)", price: 360, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/ktrcdiqoe8hz4gwvj4thb/IMG_1848-2.jpg?rlkey=pfw09ho6wz75e3qxuzygbk993&st=5gx7ycm2&dl=0"]},
+     {name: "Fighter SU-27 Drone(Camera with Downloadable App)", price: 395, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/56i00bz4mx15778lw6jxb/IMG_1849-2.jpg?rlkey=bxrr517o0fk3f2tgs1rwva39s&st=q2yokn9d&dl=0"]},
+    {name: "Spray Fighter RC Jet(Cannot Fly)", price: 100, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/gejs3fe2ekb0qb0ked70h/IMG_1845-2.jpg?rlkey=udhku781uj2whm794kv3osn4q&st=1jrbw84q&dl=0","https://dl.dropboxusercontent.com/scl/fi/xw5oncdz0mpzj3avsa148/IMG_1846-2.jpg?rlkey=7po04cujvbhlxklvfuhbc2iwk&st=6v1b91sw&dl=0"],
+    variants: {Colour:["Navy Blue","Camoflauge"]}},
+    {name: "RC Jumbo Jet (Cannot Fly)", price: 150, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/56i00bz4mx15778lw6jxb/IMG_1849-2.jpg?rlkey=bxrr517o0fk3f2tgs1rwva39s&st=q2yokn9d&dl=0"]},
+    {name: "RC Speed Boat", price: 80, category: "Toys", images: ["https://dl.dropboxusercontent.com/scl/fi/gek1irutrxv9buufu0vrv/IMG_1852-2.jpg?rlkey=g3qrdgsuqb6eu18d0q8q9b4ff&st=6gq6an9m&dl=0"]},
+    
+    
+         
+   {name: "Protector|Silex Fruit Blender", price: 150, category: "Mini Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/rxxhohq2hrfl9qi1li78f/20250503_150826.jpg?rlkey=xtbzaqmqz4xak02qpow52uvsj&st=5o9k4i3y&dl=0","https://dl.dropboxusercontent.com/scl/fi/583yvkbpyvatvcxb7tmrd/20250503_151013.jpg?rlkey=55nlzyewktfcjt7x5ra4x2p8b&st=9gkytnts&dl=0"],
+     variants: {Colour:["Black","White"]}}
+    ,
+   {name: "Protector|Silex Kettle 1.75L", price: 195, category: "Mini Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/ey2ziqkxhzqw0hel7saft/20250503_150248.jpg?rlkey=ht0gdnlo8hf26ydhaqn9chgua&st=8al5b2nq&dl=0"]} 
+    ,
+     {name: "Protector|Silex Mixer", price: 125, category: "Mini Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/lxnlyhdd6vc0f9jmzbkng/20250503_145531.jpg?rlkey=jwknxwmbks9s1uwqekabc1fcz&st=fr2d1ux9&dl=0"]} 
+    ,
+    {name: "Black+Decker Immersion Blender", price: 285, category: "Mini Appliances", images: ["https://dl.dropboxusercontent.com/scl/fi/gd8uqpl2a7lo876z97zta/20250503_142528.jpg?rlkey=y6d80ydgo9r68o1o2seojhud1&st=pb54ofzc&dl=0"]} 
+    ,
+    
+    
+    
+    
+    
+    {name: "Passaphone Telephone w Calculator", price: 175, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/r8rj7ou2ulj3ci5qy8cbh/IMG_1918.jpg?rlkey=pyyje94g5tqozxu9r2bzpe4q2&st=xnwlte6p&dl=0"]}
+    , 
+    {name: "Panatel Telephone", price: 75, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/0qvyz6w3cfphyk0wo5wgj/IMG_1917.jpg?rlkey=wygz583u5r4uh5fxf7htgjk2t&st=k0949dkh&dl=0"]}
+    ,
+    {name: "Digital Power Speaker with Solar Panel", price: 195, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/v3jzn3f7px0v6bmim4ji5/IMG_1914.jpg?rlkey=4fgbupq2q66x4m50fyw8f51lv&st=nnya3uxf&dl=0"]}
+    ,
+    {name: "Digital Power Round Speaker", price: 295, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/q66gwt8yplbbkmp5wnp41/IMG_1911.jpg?rlkey=yy1ldn734u7tog9xhfnebm27p&st=k0drvg4k&dl=0"]}
+    ,
+    {name: "Nano Tech Gaming Series Speaker", price: 175, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/a9tuq41xsrvg8mhtureuy/IMG_1913.jpg?rlkey=06xgwr3xux930onu95ontygyh&st=awmghrtp&dl=0"]}
+    ,
+    {name: "Nano Tech Gaming Series Sound Bar", price: 240, category: "Electronics", images: ["https://dl.dropboxusercontent.com/scl/fi/ohtvtdlqve7l4mh2wuodu/IMG_1912.jpg?rlkey=bxzq2gqze326c4z19vgzakfef&st=jn0iqwg1&dl=0"]}
+    ,
+  ];
+
+  /* ============================== STATE & REFS ============================== */
+  let storeItems = []; // displayed items (local + Firestore merge)
+  let cart = [];
+  let currentPage = 1; const itemsPerPage = 8;
+  let currentFilter = 'All', currentSearch = '';
+  const ADMIN_PASSWORD = 'admin123';
+
+  // Sections
+  const splash = document.getElementById('splash');
+  const homeSection = document.getElementById('homeSection');
+  const storeSection = document.getElementById('storeSection');
+  const cartSection  = document.getElementById('cartSection');
+
+  // Search/filters
+  const searchInput = document.getElementById('searchInput');
+  const categorySelect = document.getElementById('categorySelect');
+  const resultsCount = document.getElementById('resultsCount');
+  const itemsGrid = document.getElementById('itemsGrid');
+  const paginationBar = document.getElementById('paginationBar');
+
+  // Home previews
+  const specialPreview = document.getElementById('specialPreview');
+  const featuredPreview = document.getElementById('featuredPreview');
+
+  // Cart
+  const cartToggleBtn = document.getElementById('cartToggleBtn');
+  const cartSidebar = document.getElementById('cartSidebar');
+  const cartListEl = document.getElementById('cartList');
+  const cartTotalEl = document.getElementById('cartTotal');
+  const cartCount = document.getElementById('cartCount');
+
+  // Modal
+  const productModal = document.getElementById('productModal');
+  const modalMainImg = document.getElementById('modalMainImg');
+  const modalThumbs = document.getElementById('modalThumbs');
+  const modalName = document.getElementById('modalName');
+  const modalCategory = document.getElementById('modalCategory');
+  const modalDescription = document.getElementById('modalDescription');
+  const modalPrice = document.getElementById('modalPrice');
+  const variantSelectors = document.getElementById('variantSelectors');
+
+  // Checkout
+  const cartPageItems = document.getElementById('cartPageItems');
+  const totalPriceEl = document.getElementById('totalPrice');
+  const townSelect = document.getElementById('townSelect');
+  const deliveryFeeRow = document.getElementById('deliveryFeeRow');
+  const deliveryFeeValue = document.getElementById('deliveryFeeValue');
+  const grandTotalValue = document.getElementById('grandTotalValue');
+
+  // Reviews
+  const reviewsListHome = document.getElementById('reviewsListHome');
+  const reviewFormHome = document.getElementById('reviewFormHome');
+  const reviewNameHome = document.getElementById('reviewNameHome');
+  const reviewRatingHome = document.getElementById('reviewRatingHome');
+  const reviewFeedbackHome = document.getElementById('reviewFeedbackHome');
+
+  const reviewsListCheckout = document.getElementById('reviewsListCheckout');
+  const reviewFormCheckout = document.getElementById('reviewFormCheckout');
+  const reviewNameCheckout = document.getElementById('reviewNameCheckout');
+  const reviewRatingCheckout = document.getElementById('reviewRatingCheckout');
+  const reviewFeedbackCheckout = document.getElementById('reviewFeedbackCheckout');
+
+  // Admin
+  const adminModal = document.getElementById('adminModal');
+  const adminPassInput = document.getElementById('adminPass');
+  const adminProductsList = document.getElementById('adminProductsList');
+  const adminProductFormWrapper = document.getElementById('adminProductFormWrapper');
+  const ordersList = document.getElementById('ordersList');
+
+  const pm_name = document.getElementById('pm_name');
+  const pm_category = document.getElementById('pm_category');
+  const pm_description = document.getElementById('pm_description');
+  const pm_price = document.getElementById('pm_price');
+  const pm_originalPrice = document.getElementById('pm_originalPrice');
+  const pm_images = document.getElementById('pm_images');
+  const pm_variants = document.getElementById('pm_variants');
+  const pm_special = document.getElementById('pm_special');
+  const pm_save = document.getElementById('pm_save');
+  const pm_cancel = document.getElementById('pm_cancel');
+
+  /* ============================== UTILS ============================== */
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+  function toast(msg,ok=true){const t=document.createElement('div');t.className=`fixed top-6 right-6 z-[90] p-3 rounded shadow text-white ${ok?'bg-green-600':'bg-red-600'}`;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2200);}
+
+  function feeForTownCart(town, cart){
+    if(!town) return {tier:null, fee:0, hasBig:false};
+    const tier = townToTier[town];
+    if(!tier){ console.warn(`⚠️ Town '${town}' not mapped. Fee=0.`); return {tier:null,fee:0,hasBig:false}; }
+    const prices = deliveryTiers.find(t=>t.tier===tier);
+    const hasBig = cart.some(i=>i.category==='Furniture'||i.category==='Appliances'); // Only these count as big
+    return { tier, fee: hasBig ? prices.big : prices.small, hasBig };
+  }
+  function populateTownDropdown(sel){
+    sel.innerHTML = '<option value="">Select your town (Trinidad)</option>';
+    Object.keys(townToTier).sort((a,b)=>a.localeCompare(b)).forEach(t=>{
+      const o=document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o);
+    });
+  }
+  function serializeVariants(obj){ return Object.entries(obj).map(([k,a])=>`${k}:${a.join(',')}`).join(';'); }
+  function parseVariants(s){
+    if(!s) return {};
+    const out={};
+    s.split(';').map(x=>x.trim()).filter(Boolean).forEach(p=>{
+      const[k,v]=p.split(':'); if(k&&v) out[k.trim()]=v.split(',').map(y=>y.trim()).filter(Boolean);
+    });
+    return out;
+  }
+  function generateOrderRef(){
+    const year = new Date().getFullYear().toString().slice(-2);
+    const rand = Math.floor(10000 + Math.random()*90000);
+    return `CN-${year}${rand}`;
+  }
+  function hideSplashNow(){
+    const s=document.getElementById('splash'); if(!s) return;
+    s.classList.add('fade-out'); setTimeout(()=>s.remove(),420);
+  }
+
+  /* ============================== SPLASH CONTROL & NAV ============================== */
+  document.getElementById('forceHideSplashBtn').addEventListener('click', () => { hideSplashNow(); showPage('home'); });
+  window.addEventListener('load', ()=>{ const s=document.getElementById('splash'); if(s){ setTimeout(()=>{ if(document.body.contains(s)) hideSplashNow(); },3000); } });
+
+  document.getElementById('navHomeBtn').addEventListener('click',()=>showPage('home'));
+  document.getElementById('navStoreBtn').addEventListener('click',()=>showPage('store'));
+  document.getElementById('backHomeBtn').addEventListener('click',()=>showPage('home'));
+  document.getElementById('adminHotspot').addEventListener('click',openAdminLogin);
+  if (location.hash==='#admin') openAdminLogin();
+
+  document.getElementById('cartToggleBtn').addEventListener('click',toggleCartSidebar);
+  document.getElementById('cartCloseBtn').addEventListener('click',toggleCartSidebar);
+
+  document.querySelectorAll('[data-homecat]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const cat=b.getAttribute('data-homecat');
+      categorySelect.value = (cat==='All')? 'All' : cat;
+      currentFilter=categorySelect.value; currentPage=1; showPage('store');
+    });
+  });
+
+  /* ============================== HYBRID + FETCH (LOCAL FIRST, MERGE FIRESTORE) ============================== */
+  async function loadProducts() {
+    try {
+      // Start with local items
+      const localItems = [...seedItems];
+
+      // If Firestore configured, fetch and merge (no duplicates by name)
+      if (db) {
+        const snap = await db.collection('products').get();
+        const cloudItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const seen = new Set(localItems.map(i => (i.name||'').toLowerCase()));
+        const merged = [
+          ...localItems,
+          ...cloudItems.filter(ci => !seen.has((ci.name||'').toLowerCase()))
+        ];
+        storeItems = merged;
+        console.log(`🛒 Loaded ${storeItems.length} items (local + Firestore merge).`);
+      } else {
+        console.warn('⚠️ Firestore not configured — showing local items only.');
+        storeItems = localItems;
+      }
+
+      renderEverything();
+    } catch (err) {
+      console.error('Failed to load products:', err);
+      storeItems = [...seedItems];
+      renderEverything();
+    }
+  }
+
+  /* ============================== HOME RENDER ============================== */
+  function renderHome(){
+    specialPreview.innerHTML='';
+    const specials=storeItems.filter(i=>i.isSpecial).slice(0,3);
+    if(!specials.length) specialPreview.innerHTML='<div class="text-slate-700">No specials right now</div>';
+    specials.forEach(p=>{
+      const d=document.createElement('div');
+      d.className='flex gap-3 items-center cursor-pointer';
+      d.innerHTML=`<img src="${p.images?.[0]||''}" class="w-20 h-20 object-cover rounded">
+                   <div><div class="font-semibold">${escapeHtml(p.name||'')}</div>
+                   <div class="text-yellow-700 font-bold">$${p.price}${p.originalPrice?` <span class="line-through text-sm text-slate-500">$${p.originalPrice}</span>`:''}</div></div>`;
+      d.addEventListener('click',()=>openProductModal(p));
+      specialPreview.appendChild(d);
+    });
+
+    featuredPreview.innerHTML='';
+    storeItems.filter(i=>!i.isSpecial).slice(0,3).forEach(p=>{
+      const d=document.createElement('div');
+      d.className='flex gap-3 items-center cursor-pointer';
+      d.innerHTML=`<img src="${p.images?.[0]||''}" class="w-20 h-20 object-cover rounded">
+                   <div><div class="font-semibold">${escapeHtml(p.name||'')}</div><div class="text-slate-700">$${p.price}</div></div>`;
+      d.addEventListener('click',()=>openProductModal(p));
+      featuredPreview.appendChild(d);
+    });
+  }
+
+  /* ============================== STORE RENDER ============================== */
+  searchInput.addEventListener('input',e=>{currentSearch=e.target.value||'';currentPage=1;renderStore();});
+  categorySelect.addEventListener('change',e=>{currentFilter=e.target.value;currentPage=1;renderStore();});
+
+  function renderStore(){
+    const q=(currentSearch||'').toLowerCase();
+    const filtered=storeItems.filter(it=>{
+      const ms=!q||it.name?.toLowerCase().includes(q)||(it.category||'').toLowerCase().includes(q);
+      const mc=(currentFilter==='All'||!currentFilter)?true:it.category===currentFilter;
+      return ms&&mc;
+    });
+
+    resultsCount.textContent=`${filtered.length} items`;
+    const totalPages=Math.max(1,Math.ceil(filtered.length/itemsPerPage));
+    if(currentPage>totalPages) currentPage=1;
+    const pageItems=filtered.slice((currentPage-1)*itemsPerPage,(currentPage)*itemsPerPage);
+
+    itemsGrid.innerHTML='';
+    pageItems.forEach(item=>{
+      const card=document.createElement('div');
+      card.className='relative bg-white p-3 sm:p-4 rounded-lg shadow';
+      if(item.soldOut){
+        const b=document.createElement('div');
+        b.className='absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded';
+        b.textContent='SOLD OUT'; card.appendChild(b);
+      }
+      card.innerHTML+=`
+        <div class="overflow-hidden rounded">
+          <img src="${item.images?.[0]||''}" alt="${escapeHtml(item.name||'')}" class="w-full h-48 sm:h-56 object-contain product-img-hover" />
+        </div>
+        <div class="mt-3">
+          <div class="font-semibold">${escapeHtml(item.name||'')}</div>
+          <div class="text-sm text-slate-600">${escapeHtml(item.category||'')}</div>
+          <p class="mt-2 text-sm text-slate-700 whitespace-pre-line">${escapeHtml(item.description||'')}</p>
+          <div class="mt-2">
+            ${item.originalPrice
+              ? `<span class="text-red-600 font-bold">$${item.price}</span> <span class="line-through text-sm text-gray-500">$${item.originalPrice}</span>`
+              : `<span class="font-bold text-[#003366]">$${item.price}</span>`
+            }
+          </div>
+          <div class="mt-3 flex flex-col sm:flex-row gap-2">
+            <button class="px-3 py-2 bg-[#003366] text-white rounded openDetails">Details</button>
+            <button class="px-3 py-2 bg-yellow-400 text-[#003366] rounded quickAdd" ${item.soldOut?'disabled':''}>Add</button>
+          </div>
+        </div>`;
+      card.querySelector('.openDetails').addEventListener('click',()=>openProductModal(item));
+      const qa=card.querySelector('.quickAdd');
+      if(qa && !item.soldOut){
+        qa.addEventListener('click',()=>{
+          const opts={}; if(item.variants) for(const[k,arr] of Object.entries(item.variants)) opts[k]=arr[0];
+          addToCart({
+            name:item.name,category:item.category,price:item.price,qty:1,
+            image:item.images?.[0]||'',selectedOptions:opts,description:item.description||''
+          });
+          toast('Added to cart'); updateTotals();
+        });
+      }
+      itemsGrid.appendChild(card);
+    });
+
+    paginationBar.innerHTML='';
+    for(let i=1;i<=Math.max(1,Math.ceil(filtered.length/itemsPerPage));i++){
+      const b=document.createElement('button');
+      b.textContent=i;
+      b.className=`px-3 py-1 rounded ${i===currentPage?'bg-[#003366] text-white':'bg-white border'}`;
+      b.addEventListener('click',()=>{currentPage=i;renderStore();window.scrollTo({top:0,behavior:'smooth'});});
+      paginationBar.appendChild(b);
+    }
+  }
+
+  /* ============================== PRODUCT MODAL ============================== */
+  let modalProduct=null, modalSelectedImageIndex=0;
+  function openProductModal(p){
+    modalProduct=p; modalSelectedImageIndex=0;
+    productModal.classList.remove('hidden');
+    modalMainImg.src=p.images?.[0]||'';
+    modalName.textContent=p.name||'';
+    modalCategory.textContent=p.category||'';
+    modalDescription.textContent=p.description||'';
+    modalPrice.textContent='$'+Number(p.price||0).toFixed(2);
+
+    variantSelectors.innerHTML='';
+    if(p.variants && Object.keys(p.variants).length){
+      for(const[axis,arr] of Object.entries(p.variants)){
+        const wrap=document.createElement('div'); wrap.className='mb-3';
+        wrap.innerHTML=`<label class="block text-sm font-medium">${axis}</label>`;
+        const sel=document.createElement('select'); sel.dataset.variant=axis; sel.className='mt-1 p-2 border rounded w-full';
+        arr.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+        wrap.appendChild(sel); variantSelectors.appendChild(wrap);
+      }
+    } else {
+      variantSelectors.innerHTML='<div class="text-sm text-slate-600">No options</div>';
+    }
+
+    modalThumbs.innerHTML='';
+    (p.images||[]).forEach((img,idx)=>{
+      const t=document.createElement('img'); t.src=img; t.className='thumb '+(idx===0?'selected':'');
+      t.addEventListener('click',()=>{
+        modalSelectedImageIndex=idx; modalMainImg.src=img;
+        Array.from(modalThumbs.children).forEach(c=>c.classList.remove('selected')); t.classList.add('selected');
+        Array.from(variantSelectors.querySelectorAll('select')).forEach(sel=>{
+          const opts=Array.from(sel.options).map(o=>o.value);
+          if(opts.length===p.images.length && opts[idx]) sel.value=opts[idx];
+        });
+      });
+      modalThumbs.appendChild(t);
+    });
+  }
+  document.getElementById('closeProductModal').addEventListener('click',()=>{ modalProduct=null; productModal.classList.add('hidden'); });
+  document.getElementById('addToCartBtn').addEventListener('click',()=>{
+    if(!modalProduct || modalProduct.soldOut) return;
+    const selected={}; variantSelectors.querySelectorAll('select').forEach(s=>selected[s.dataset.variant]=s.value);
+    const image=modalProduct.images?.[modalSelectedImageIndex]||modalProduct.images?.[0]||'';
+    addToCart({
+      name:modalProduct.name,category:modalProduct.category,price:modalProduct.price,qty:1,
+      image,selectedOptions:selected,description:modalProduct.description||''
+    });
+    productModal.classList.add('hidden'); toast('Added to cart'); updateTotals();
+  });
+
+  /* ============================== CART ============================== */
+  function addToCart(it){
+    const f=cart.find(c=>c.name===it.name && c.category===it.category && JSON.stringify(c.selectedOptions||{})===JSON.stringify(it.selectedOptions||{}));
+    if(f) f.qty+=it.qty||1; else cart.push({...it,qty:it.qty||1});
+    renderCart();
+  }
+  function renderCart(){
+    cartListEl.innerHTML=''; cartPageItems.innerHTML='';
+    let total=0, count=0;
+    cart.forEach((c,i)=>{ total+=c.price*c.qty; count+=c.qty;
+      const row=document.createElement('div'); row.className='flex gap-3 items-start';
+      row.innerHTML=`<img src="${c.image}" class="w-16 h-16 object-cover rounded">
+        <div class="flex-1">
+          <div class="font-semibold">${escapeHtml(c.name)}</div>
+          <div class="text-xs uppercase text-slate-500">${(c.category==='Furniture'||c.category==='Appliances')?'BIG ITEM':'small item'}</div>
+          <div class="text-sm text-slate-600">${c.selectedOptions?Object.entries(c.selectedOptions).map(([k,v])=>`${k}: ${v}`).join(' / '):''}</div>
+          <div class="text-sm mt-1">$${c.price} × ${c.qty}</div>
+          <div class="mt-2 flex gap-2">
+            <button class="px-2 py-1 bg-gray-100 rounded" onclick="changeQty(${i},-1)">➖</button>
+            <button class="px-2 py-1 bg-gray-100 rounded" onclick="changeQty(${i},1)">➕</button>
+            <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="removeFromCart(${i})">Remove</button>
+          </div>
+        </div>`;
+      cartListEl.appendChild(row);
+
+      const cp=document.createElement('div'); cp.className='bg-white p-3 rounded shadow flex items-start gap-3';
+      cp.innerHTML=`<img src="${c.image}" class="w-20 h-20 object-cover rounded">
+        <div>
+          <div class="font-semibold">${escapeHtml(c.name)}</div>
+          <div class="text-xs uppercase text-slate-500">${(c.category==='Furniture'||c.category==='Appliances')?'BIG ITEM':'small item'}</div>
+          <div class="text-sm text-slate-600">${c.selectedOptions?Object.entries(c.selectedOptions).map(([k,v])=>`${k}: ${v}`).join(' / '):''}</div>
+          <div class="mt-1">$${c.price} × ${c.qty}</div>
+        </div>`;
+      cartPageItems.appendChild(cp);
+    });
+    cartTotalEl.textContent='$'+total.toFixed(2); cartCount.textContent=count; totalPriceEl.textContent='$'+total.toFixed(2);
+  }
+  function changeQty(i,d){ cart[i].qty+=d; if(cart[i].qty<=0) removeFromCart(i); renderCart(); updateTotals(); }
+  function removeFromCart(i){ cart.splice(i,1); renderCart(); updateTotals(); }
+  function toggleCartSidebar(){ cartSidebar.classList.toggle('translate-x-full'); }
+
+  /* ============================== CHECKOUT ============================== */
+  function populateTownDropdown(sel){
+    sel.innerHTML = '<option value="">Select your town (Trinidad)</option>';
+    Object.keys(townToTier).sort((a,b)=>a.localeCompare(b)).forEach(t=>{
+      const o=document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o);
+    });
+  }
+  populateTownDropdown(townSelect);
+
+  townSelect.addEventListener('change',updateTotals);
+
+  function updateTotals(){
+    const itemsTotal=cart.reduce((s,i)=>s+i.price*i.qty,0);
+    totalPriceEl.textContent='$'+itemsTotal.toFixed(2);
+    const town=townSelect.value;
+    const {fee}=feeForTownCart(town,cart);
+    if(!town) deliveryFeeRow.classList.add('hidden'); else deliveryFeeRow.classList.remove('hidden');
+    deliveryFeeValue.textContent='$'+Number(fee||0).toFixed(2);
+    grandTotalValue.textContent='$'+(itemsTotal+(fee||0)).toFixed(2);
+  }
+
+  async function submitOrder(){
+    const name=document.getElementById('cust_name').value.trim();
+    const contact=document.getElementById('cust_contact').value.trim();
+    const email=document.getElementById('cust_email').value.trim();
+    const address=document.getElementById('cust_address').value.trim();
+    const town=townSelect.value;
+    if(!name||!contact||!email||!address||!town){ alert('Please complete all checkout fields including Town.'); return; }
+    if(!cart.length){ alert('Your cart is empty.'); return; }
+
+    const itemsTotal=cart.reduce((s,i)=>s+i.price*i.qty,0);
+    const {tier,fee,hasBig}=feeForTownCart(town,cart);
+    const orderTotal=itemsTotal+(fee||0);
+    const orderRef = generateOrderRef();
+
+    const order={
+      orderRef,
+      customer:{name,contact,email,address,town},
+      delivery:{tier:tier||null,fee:fee||0,mode:hasBig?'big':'small'},
+      items:cart.map(i=>({
+        name:i.name,category:i.category,price:i.price,qty:i.qty,
+        selectedOptions:i.selectedOptions||{}, image:i.image, description:i.description||''
+      })),
+      itemsTotal, orderTotal, createdAt:new Date()
+    };
+
+    try{
+      if(!db){ console.warn('Order not saved (no Firestore).',order); alert('Order logged to console (Firestore not configured).'); }
+      else{
+        await db.collection('orders').add({...order, createdAt: firebase.firestore.FieldValue.serverTimestamp()});
+        alert(`✅ Order saved! Reference: ${orderRef}`);
+      }
+      cart=[]; renderCart(); showPage('home');
+      ['cust_name','cust_contact','cust_email','cust_address'].forEach(id=>document.getElementById(id).value=''); townSelect.value=''; updateTotals();
+    }catch(err){
+      console.error('❌ Failed to submit order:', err);
+      alert('Failed to submit order: ' + (err?.message||'Unknown Firestore error'));
+    }
+  }
+  document.getElementById('submitOrderBtn').addEventListener('click', submitOrder);
+
+  /* ============================== REVIEWS ============================== */
+  function reviewCard(r){
+    const when=r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleString() : '';
+    const el=document.createElement('div'); el.className='p-3 bg-slate-50 rounded shadow';
+    el.innerHTML=`<div class="font-semibold text-[#003366]">${escapeHtml(r.name||'Anonymous')}</div>
+                  <div class="text-yellow-500">${'★'.repeat(r.rating||0)}${'☆'.repeat(Math.max(0,5-(r.rating||0)))}</div>
+                  <p class="text-sm mt-1 whitespace-pre-line">${escapeHtml(r.feedback||'')}</p>
+                  ${when?`<div class="text-xs text-slate-500 mt-1">${when}</div>`:''}`;
+    return el;
+  }
+  async function submitReview(name, rating, feedback){
+    try{
+      if(!db){ console.warn('Review not saved (no Firestore).',{name,rating,feedback}); alert('Review logged to console (Firestore not configured).'); return; }
+      await db.collection('reviews').add({ name, rating, feedback, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      toast('Thanks for your review!');
+    }catch(err){
+      console.error('Review save failed:', err);
+      alert('Failed to submit review: ' + (err?.message||'Unknown Firestore error'));
+    }
+  }
+  function bindReviewForm(form,nameEl,rateEl,fbEl){
+    if(!form) return;
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const name=nameEl.value.trim(), rating=parseInt(rateEl.value,10), feedback=fbEl.value.trim();
+      if(!name||!rating||!feedback){ alert('Please fill all review fields'); return; }
+      await submitReview(name,rating,feedback);
+      try{
+        if(db){
+          const snap=await db.collection('reviews').orderBy('createdAt','desc').limit(5).get();
+          const list = form.id.includes('Checkout') ? reviewsListCheckout : reviewsListHome;
+          list.innerHTML='';
+          snap.forEach(doc=>list.appendChild(reviewCard(doc.data())));
+        }
+      }catch{}
+      form.reset();
+    });
+  }
+  bindReviewForm(reviewFormHome,reviewNameHome,reviewRatingHome,reviewFeedbackHome);
+  bindReviewForm(reviewFormCheckout,reviewNameCheckout,reviewRatingCheckout,reviewFeedbackCheckout);
+  function attachReviewsLive(){
+    if(!db){ console.log('Reviews live feed disabled — Firestore not configured.'); return; }
+    db.collection('reviews').orderBy('createdAt','desc').limit(10)
+      .onSnapshot(snap=>{
+        reviewsListHome.innerHTML=''; reviewsListCheckout.innerHTML='';
+        snap.forEach(doc=>{
+          const d=doc.data();
+          reviewsListHome.appendChild(reviewCard(d));
+          reviewsListCheckout.appendChild(reviewCard(d));
+        });
+      });
+  }
+
+  /* ============================== ADMIN (local-first, also save to Firestore) ============================== */
+  function openAdminLogin(){
+    adminModal.classList.remove('hidden');
+    adminProductsList.innerHTML='';
+    adminProductFormWrapper.classList.add('hidden');
+    adminPassInput.value='';
+    ordersList.innerHTML='';
+  }
+  window.openAdminLogin=openAdminLogin;
+
+  document.getElementById('adminLoginBtn').addEventListener('click', async ()=>{
+    if(adminPassInput.value!==ADMIN_PASSWORD){ alert('Wrong password'); return; }
+    renderAdminProducts(); await renderAdminOrders();
+  });
+  document.getElementById('adminCloseBtn').addEventListener('click',()=>adminModal.classList.add('hidden'));
+
+  let editingIndex=-1;
+
+  function renderAdminProducts(){
+    adminProductsList.innerHTML = `
+      <div class="flex gap-2 mb-3 sticky top-0 bg-white z-10 p-2 rounded">
+        <button id="adminNewBtn" class="bg-green-600 text-white px-3 py-1 rounded">+ New</button>
+        <button id="adminLogoutBtn" class="bg-gray-200 px-3 py-1 rounded ml-auto">Logout</button>
+      </div>
+    `;
+
+    storeItems.forEach((p,idx)=>{
+      adminProductsList.innerHTML += `
+        <div class="p-3 bg-slate-50 rounded flex items-center justify-between mb-2 shadow-sm" data-idx="${idx}">
+          <div class="min-w-0">
+            <div class="font-semibold truncate">${escapeHtml(p.name||'')}</div>
+            <div class="text-sm">
+              ${escapeHtml(p.category||'')} • $${p.price||0}
+              ${p.originalPrice?`• <span class="line-through">$${p.originalPrice}</span>`:''}
+              ${p.isSpecial?'• ⭐ Special':''}
+              ${p.soldOut?'• ❌ Sold Out':''}
+            </div>
+            <div class="text-xs text-slate-600 mt-1 whitespace-pre-line">${escapeHtml(p.description||'')}</div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button data-action="edit" class="bg-blue-600 text-white px-2 py-1 rounded">Edit</button>
+            <button data-action="toggle" class="bg-amber-500 text-white px-2 py-1 rounded">${p.soldOut?'Mark In Stock':'Mark Sold Out'}</button>
+            <button data-action="del" class="bg-red-600 text-white px-2 py-1 rounded">Delete</button>
+          </div>
+        </div>`;
+    });
+
+    document.getElementById('adminNewBtn').onclick = () => { editingIndex = -1; showAdminForm(); };
+    document.getElementById('adminLogoutBtn').onclick = () => adminModal.classList.add('hidden');
+  }
+
+  adminProductsList.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('[data-idx]');
+    if (!row) return;
+    const idx = +row.dataset.idx;
+    const action = btn.dataset.action;
+    const item = storeItems[idx];
+
+    switch (action) {
+      case 'edit':
+        editingIndex = idx;
+        fillForm(item);
+        showAdminForm();
+        break;
+      case 'toggle':
+        try {
+          item.soldOut = !item.soldOut;
+          if (db && item.id) { await db.collection('products').doc(item.id).update({ soldOut: item.soldOut }); }
+          renderAdminProducts(); renderStore(); renderHome();
+        } catch (err) { console.error('Toggle failed:', err); alert('Failed to update product: ' + (err?.message||'Unknown Firestore error')); }
+        break;
+      case 'del':
+        if (confirm('Delete this item?')) {
+          try {
+            if (db && item.id) await db.collection('products').doc(item.id).delete();
+            storeItems.splice(idx, 1);
+            renderAdminProducts(); renderStore(); renderHome();
+          } catch (err) { console.error('Delete failed:', err); alert('Failed to delete product: ' + (err?.message||'Unknown Firestore error')); }
+        }
+        break;
+    }
+  });
+
+  function showAdminForm(){
+    adminProductFormWrapper.classList.remove('hidden');
+    pm_name.value=pm_category.value=pm_price.value=pm_originalPrice.value=pm_images.value=pm_variants.value=pm_description.value='';
+    pm_special.checked=false;
+    if(editingIndex>=0) fillForm(storeItems[editingIndex]);
+
+    pm_cancel.onclick=()=>adminProductFormWrapper.classList.add('hidden');
+    pm_save.onclick=async ()=>{
+      const name=pm_name.value.trim(); if(!name){alert('Name required');return;}
+      const category=pm_category.value.trim()||'Uncategorized';
+      const description=pm_description.value.trim()||'';
+      const price=Number(pm_price.value)||0;
+      const originalPrice=pm_originalPrice.value?Number(pm_originalPrice.value):undefined;
+      const images=pm_images.value?pm_images.value.split(',').map(s=>s.trim()).filter(Boolean):[];
+      const variants=parseVariants(pm_variants.value);
+      const isSpecial=pm_special.checked;
+
+      const prod={name,category,description,price,images,variants,isSpecial,soldOut:false};
+      if (originalPrice) prod.originalPrice = originalPrice;
+
+      try {
+        if(editingIndex>=0){
+          // Update local
+          const curr = storeItems[editingIndex];
+          storeItems[editingIndex] = { ...curr, ...prod };
+          // Update Firestore if has id; else create
+          if (db && curr.id) {
+            await db.collection('products').doc(curr.id).update(prod);
+            alert('✅ Product updated in Firestore.');
+          } else if (db && !curr.id) {
+            const ref = await db.collection('products').add({ ...storeItems[editingIndex], createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+            storeItems[editingIndex].id = ref.id;
+            alert('✅ Product saved to Firestore.');
+          } else {
+            alert('Updated locally (Firestore not configured).');
+          }
+          editingIndex=-1;
+        } else {
+          // Create new locally
+          const newLocal = { ...prod };
+          // Save to Firestore too (if configured)
+          if (db) {
+            const ref = await db.collection('products').add({ ...newLocal, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+            newLocal.id = ref.id;
+            alert('✅ Product saved to Firestore.');
+          } else {
+            alert('Saved locally (Firestore not configured).');
+          }
+          storeItems.unshift(newLocal);
+        }
+        adminProductFormWrapper.classList.add('hidden');
+        renderAdminProducts(); renderStore(); renderHome();
+      } catch (err) {
+        console.error('Save failed:', err);
+        alert('Failed to save product: ' + (err?.message||'Unknown Firestore error'));
+      }
+    };
+  }
+
+  function fillForm(p){
+    pm_name.value=p.name||''; pm_category.value=p.category||''; pm_price.value=p.price||'';
+    pm_originalPrice.value=p.originalPrice||''; pm_images.value=(p.images||[]).join(', ');
+    pm_variants.value=serializeVariants(p.variants||{}); pm_special.checked=!!p.isSpecial;
+    pm_description.value=p.description||'';
+  }
+
+  async function renderAdminOrders(){
+    ordersList.innerHTML='';
+    if(!db){ ordersList.innerHTML='<div class="p-3 bg-yellow-100 rounded">Firestore not configured — no orders</div>'; return; }
+    try{
+      const snap=await db.collection('orders').orderBy('createdAt','desc').get();
+      snap.forEach(doc=>{
+        const o=doc.data(); const when=o.createdAt && o.createdAt.toDate? o.createdAt.toDate().toLocaleString(): '';
+        const el=document.createElement('div'); el.className='p-3 bg-slate-50 rounded mb-2';
+        el.innerHTML=`<div class="font-semibold">${escapeHtml(o.customer?.name||'No name')} — ${when} — Ref: ${escapeHtml(o.orderRef||'')}</div>
+                      <div class="text-sm">Town: ${escapeHtml(o.customer?.town||'')} • Tier: ${o.delivery?.tier??'—'} • Fee: $${o.delivery?.fee??0} (${escapeHtml(o.delivery?.mode||'')})</div>
+                      <div class="text-sm mt-1">Items: $${o.itemsTotal??0} • Total: $${o.orderTotal??0}</div>`;
+        ordersList.appendChild(el);
+      });
+    }catch(err){ console.error(err); ordersList.innerHTML='<div class="p-3 bg-red-100 rounded">Failed to load orders</div>'; }
+  }
+
+  /* ============================== PAGE FLOW ============================== */
+  function showPage(p){
+    homeSection.classList.add('hidden'); storeSection.classList.add('hidden'); cartSection.classList.add('hidden');
+    if(p==='home'){ homeSection.classList.remove('hidden'); renderHome(); }
+    if(p==='store'){ storeSection.classList.remove('hidden'); renderStore(); }
+    if(p==='cart'){ cartSection.classList.remove('hidden'); renderCart(); updateTotals(); }
+    cartSidebar.classList.add('translate-x-full');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  window.showPage=showPage; window.toggleCartSidebar=toggleCartSidebar;
+  window.changeQty=changeQty; window.removeFromCart=removeFromCart; window.openAdminLogin=openAdminLogin;
+
+  // Keyboard shortcut: Shift + A for admin login
+  document.addEventListener('keydown',e=>{ if(e.shiftKey && e.key.toLowerCase()==='a') openAdminLogin(); });
+
+  /* ============================== INIT ============================== */
+  function renderEverything(){
+    renderHome(); renderStore(); renderCart(); updateTotals(); showPage('home'); hideSplashNow();
+  }
+  attachReviewsLive();
+  loadProducts();
+}); // DOMContentLoaded
+</script>
+</body>
+</html>
+    
+  </body>
+  
+</html>
